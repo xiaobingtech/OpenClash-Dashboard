@@ -21,19 +21,20 @@ struct ProxyView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .padding(.top, 100)
                     } else {
-                        Text("Proxy Groups")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal)
+                        // Text("Proxy Groups")
+                        //     .font(.headline)
+                        //     .frame(maxWidth: .infinity, alignment: .leading)
+                        //     .padding(.horizontal)
+                        
                         // 代理组列表
                         LazyVStack(spacing: 12) {
-                            ForEach(viewModel.groups, id: \.name) { group in
+                            ForEach(viewModel.groups.sorted(by: { $0.name < $1.name }), id: \.name) { group in
                                 ProxyGroupCard(
                                     name: group.name,
                                     type: group.type,
                                     count: group.all.count,
                                     selectedNode: group.now,
-                                    nodes: sortNodes(group.all, viewModel.nodes),
+                                    nodes: sortNodes(group.all, viewModel.nodes, groupName: group.name),
                                     viewModel: viewModel
                                 )
                                 .id(group.name)
@@ -42,14 +43,14 @@ struct ProxyView: View {
                         .padding(.horizontal)
                         
                         // 代理提供者列表
-                        if !viewModel.providers.filter({ $0.subscriptionInfo != nil }).isEmpty {
-                            Text("Proxy Providers")
+                        if !viewModel.providers.isEmpty {
+                            Text("Proxy Providers (\(viewModel.providers.count))")
                                 .font(.headline)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal)
                             
                             LazyVStack(spacing: 12) {
-                                ForEach(viewModel.providers.filter { $0.subscriptionInfo != nil }) { provider in
+                                ForEach(viewModel.providers.sorted(by: { $0.name < $1.name })) { provider in
                                     if let nodes = viewModel.providerNodes[provider.name] {
                                         ProxyProviderCard(provider: provider, nodes: nodes, viewModel: viewModel)
                                             .id(provider.name)
@@ -57,9 +58,15 @@ struct ProxyView: View {
                                 }
                             }
                             .padding(.horizontal)
+                        } else {
+                            Text("No proxy providers with subscription information")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding()
                         }
                     }
                 }
+                .padding(.top)
                 .padding(.bottom, 80)
             }
             .refreshable {
@@ -180,31 +187,39 @@ struct ProxyView: View {
     }
     
     // 添加节点排序方法
-    private func sortNodes(_ nodeNames: [String], _ allNodes: [ProxyNode]) -> [ProxyNode] {
-        let specialNodes = ["DIRECT", "REJECT", "PROXY"]
-        
-        // 先找出所有匹配的节点
+    private func sortNodes(_ nodeNames: [String], _ allNodes: [ProxyNode], groupName: String) -> [ProxyNode] {
+        let specialNodes = ["DIRECT", "REJECT"]
         let matchedNodes = nodeNames.compactMap { name in
-            allNodes.first { $0.name == name }
+            if specialNodes.contains(name) {
+                // 对于特殊节点，创建一个虚拟的 ProxyNode
+                return ProxyNode(
+                    id: UUID().uuidString,
+                    name: name,
+                    type: "Special",
+                    alive: true,
+                    delay: 0,
+                    history: []
+                )
+            }
+            return allNodes.first { $0.name == name }
         }
         
-        // 然后按规则排序
+        // 自定义排序逻辑
         return matchedNodes.sorted { node1, node2 in
-            let isSpecial1 = specialNodes.contains(node1.name)
-            let isSpecial2 = specialNodes.contains(node2.name)
+            // 1. DIRECT 永远在最前
+            if node1.name == "DIRECT" { return true }
+            if node2.name == "DIRECT" { return false }
             
-            if isSpecial1 && isSpecial2 {
-                // 如果都是特殊节点，按照 specialNodes 数组的顺序排序
-                return specialNodes.firstIndex(of: node1.name)! < specialNodes.firstIndex(of: node2.name)!
-            } else if isSpecial1 {
-                // 特殊节点排在前面
-                return true
-            } else if isSpecial2 {
-                return false
-            } else {
-                // 普通节点按名称排序（区分大小写）
-                return node1.name.localizedStandardCompare(node2.name) == .orderedAscending
-            }
+            // 2. REJECT 在 DIRECT 之后，其他节点之前
+            if node1.name == "REJECT" { return true }
+            if node2.name == "REJECT" { return false }
+            
+            // 3. 如果节点名称与组名相同，放在 DIRECT/REJECT 之后，其他节点之前
+            if node1.name == groupName { return true }
+            if node2.name == groupName { return false }
+            
+            // 4. 其他节点按字母顺序排序
+            return node1.name < node2.name
         }
     }
 }
@@ -398,8 +413,8 @@ struct ProxyGroupCard: View {
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
-        .onChange(of: selectedNode) { newValue in
-            print("节点选择变化 - 组：\(name), 新节点：\(newValue)")
+        .onChange(of: selectedNode) { oldValue, newValue in
+            print("节点选择变化 - 组：\(name), 旧节点：\(oldValue), 新节点：\(newValue)")
         }
     }
     
@@ -603,7 +618,7 @@ struct ProxyProviderCard: View {
             let days = Int(interval / 86400)
             return "\(days) 天前"
         } else {
-            // 超过30天显示具体日期
+            // 过30天显示具体日期
             let dateFormatter = DateFormatter()
             dateFormatter.dateStyle = .medium
             dateFormatter.timeStyle = .short

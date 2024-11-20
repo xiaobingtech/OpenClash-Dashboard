@@ -95,81 +95,115 @@ class ProxyViewModel: ObservableObject {
     
     @MainActor
     func fetchProxies() async {
-        print("开始获取代理数据")
-        // 取消之前的任务
-        currentTask?.cancel()
+        await currentTask?.value
         
-        // 创建新的任务
         currentTask = Task {
             do {
-                print("当前代理组状态：", self.groups.map { "\($0.name): \($0.now)" })
-                
-                // 1. 获取代理数据
-                guard let proxiesUrl = URL(string: "http://\(server.url):\(server.port)/proxies") else { return }
-                var proxiesRequest = URLRequest(url: proxiesUrl)
-                proxiesRequest.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
-                
-                let (proxiesData, _) = try await URLSession.shared.data(for: proxiesRequest)
-                print("收到代理数据响应")
-                
-                if Task.isCancelled { return }
-                let proxiesResponse = try JSONDecoder().decode(ProxyResponse.self, from: proxiesData)
-                
-                // 2. 获取 providers 数据
+                // 1. 获取 providers 数据
                 guard let providersUrl = URL(string: "http://\(server.url):\(server.port)/providers/proxies") else { return }
                 var providersRequest = URLRequest(url: providersUrl)
                 providersRequest.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
                 
                 let (providersData, _) = try await URLSession.shared.data(for: providersRequest)
-                print("收到providers数据响应")
-                
                 if Task.isCancelled { return }
+                
+                print("收到providers数据响应")
                 let providersResponse = try JSONDecoder().decode(ProxyProvidersResponse.self, from: providersData)
                 
-                // 3. 更新数据
-                print("开始更新数据模型")
-                
-                self.groups = proxiesResponse.proxies.values
-                    .filter { $0.all != nil }
-                    .map { proxy in
-                        ProxyGroup(
-                            name: proxy.name,
-                            type: proxy.type,
-                            now: proxy.now ?? "",
-                            all: proxy.all ?? [],
-                            alive: proxy.alive
-                        )
-                    }
-                    .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-                
-                print("更新后的代理组状态：", self.groups.map { "\($0.name): \($0.now)" })
-                
-                self.nodes = proxiesResponse.proxies.map { name, proxy in
-                    ProxyNode(
-                        id: proxy.id ?? UUID().uuidString,
-                        name: proxy.name,
-                        type: proxy.type,
-                        alive: proxy.alive,
-                        delay: proxy.history.last?.delay ?? 0,
-                        history: proxy.history
+                // 2. 更新 providers 数据
+                self.providers = providersResponse.providers.compactMap { name, provider in
+                    guard provider.subscriptionInfo != nil else { return nil }
+                    
+                    return Provider(
+                        name: name,
+                        type: provider.type,
+                        vehicleType: provider.vehicleType,
+                        nodeCount: provider.proxies.count,
+                        testUrl: provider.testUrl,
+                        subscriptionInfo: provider.subscriptionInfo,
+                        updatedAt: provider.updatedAt
                     )
                 }
                 
-                // 4. 触发视图更新
-                print("触发视图更新")
-                objectWillChange.send()
+                // 3. 更新 providerNodes
+                self.providerNodes = providersResponse.providers.mapValues { provider in
+                    provider.proxies.map { proxy in
+                        ProxyNode(
+                            id: UUID().uuidString,
+                            name: proxy.name,
+                            type: proxy.type,
+                            alive: proxy.alive,
+                            delay: proxy.history.last?.delay ?? 0,
+                            history: proxy.history
+                        )
+                    }
+                }
+                
+                // 4. 获取代理数据
+                guard let proxiesUrl = URL(string: "http://\(server.url):\(server.port)/proxies") else { return }
+                var proxiesRequest = URLRequest(url: proxiesUrl)
+                proxiesRequest.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+                
+                let (proxiesData, _) = try await URLSession.shared.data(for: proxiesRequest)
+                if Task.isCancelled { return }
+                
+                let proxiesResponse = try JSONDecoder().decode(ProxyResponse.self, from: proxiesData)
+                
+                // 5. 更新组和节点数据
+                self.groups = proxiesResponse.proxies.compactMap { name, proxy in
+                    guard proxy.all != nil else { return nil }
+                    return ProxyGroup(
+                        name: name,
+                        type: proxy.type,
+                        now: proxy.now ?? "",
+                        all: proxy.all ?? []
+                    )
+                }
+                
+                // 6. 更新节点数据
+                self.nodes = proxiesResponse.proxies.compactMap { name, proxy in
+                    // 检查节点是否在任何组的 all 列表中
+                    let isInAnyGroup = proxiesResponse.proxies.values.contains { p in
+                        p.all?.contains(name) == true
+                    }
+                    
+                    // 如果节点在任何组的 all 中，或者是普通节点（没有 all 属性），就保留
+                    if isInAnyGroup || proxy.all == nil {
+                        return ProxyNode(
+                            id: proxy.id ?? UUID().uuidString,
+                            name: name,
+                            type: proxy.type,
+                            alive: proxy.alive,
+                            delay: proxy.history.last?.delay ?? 0,
+                            history: proxy.history
+                        )
+                    }
+                    return nil
+                }
+                
+                print("数据更新完成:")
+                print("- Provider 数量:", self.providers.count)
+                print("- Provider 名称:", self.providers.map { $0.name })
+                print("- 代理组数量:", self.groups.count)
+                print("- 节点数量:", self.nodes.count)
                 
             } catch {
-                print("获取数据出错：", error)
+                if let urlError = error as? URLError, urlError.code == .cancelled {
+                    print("任务被取消，这是正常的")
+                } else {
+                    print("获取数据出错：", error)
+                    if let decodingError = error as? DecodingError {
+                        print("解码错误详情：", decodingError)
+                    }
+                }
             }
         }
         
         await currentTask?.value
-        print("数据获取完成")
     }
     
     func testGroupDelay(groupName: String, nodes: [ProxyNode]) async {
-        print("开始测速：组名 = \(groupName), 节点数 = \(nodes.count)")
+        // print("开始测速：组名 = \(groupName), 节点数 = \(nodes.count)")
         
         // 修正 URL 路径
         let urlString = "http://\(server.url):\(server.port)/group/\(groupName)/delay"
@@ -184,7 +218,7 @@ class ProxyViewModel: ObservableObject {
         ]
         
         guard let url = components.url else { return }
-        print("请求 URL: \(url)")
+        // print("请求 URL: \(url)")
         
         var request = URLRequest(url: url)
         request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
@@ -199,11 +233,11 @@ class ProxyViewModel: ObservableObject {
         
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
-            print("收到响应数据：\(String(data: data, encoding: .utf8) ?? "")")
+            // print("收到响应数据：\(String(data: data, encoding: .utf8) ?? "")")
             
             // 尝试解析错误消息
             if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data) {
-                print("API 返回错误：\(errorResponse)")
+                // print("API 返回错误：\(errorResponse)")
                 await MainActor.run {
                     // 发生错误时移除所有测试状态
                     for node in nodes {
@@ -215,7 +249,7 @@ class ProxyViewModel: ObservableObject {
             
             // 解析延迟数据
             let delays = try JSONDecoder().decode([String: Int].self, from: data)
-            print("解析延迟数据：\(delays)")
+            // print("解析延迟数据：\(delays)")
             
             await MainActor.run {
                 // 更新所有节点的延迟
@@ -259,9 +293,9 @@ class ProxyViewModel: ObservableObject {
                 }
             }
         } catch {
-            print("测速错误：\(error)")
+            // print("测速错误：\(error)")
             if let decodingError = error as? DecodingError {
-                print("解码错误详情：\(decodingError)")
+                // print("解码错误详情：\(decodingError)")
             }
         }
     }
@@ -280,7 +314,7 @@ class ProxyViewModel: ObservableObject {
         
         do {
             let (_, _) = try await URLSession.shared.data(for: request)
-            // 2. 选择成功后，测试新选择的节点延迟
+            // 2. 选择成功后，测试新选择的代理节点延迟
             await testNodeDelay(nodeName: proxyName)
             // 3. 最后刷新数据
             await fetchProxies()
@@ -355,7 +389,7 @@ class ProxyViewModel: ObservableObject {
     @MainActor
     func refreshAllData() async {
         do {
-            // 1. 获取代理数据
+            // 1. 获取理数据
             await fetchProxies()
             
             // 2. 测试所有节点延迟
