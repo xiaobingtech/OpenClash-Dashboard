@@ -236,6 +236,7 @@ struct ProxyGroupCard: View {
     let nodes: [ProxyNode]
     @ObservedObject var viewModel: ProxyViewModel
     @State private var isExpanded = false
+    @State private var isGlowing = false
     
     // 网格布局配置
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 15)
@@ -313,19 +314,31 @@ struct ProxyGroupCard: View {
                             }
                             Task {
                                 await viewModel.selectProxy(groupName: name, proxyName: node.name)
+                                // 确保动画继续运行
+                                withAnimation {
+                                    isGlowing = true
+                                }
                             }
                         } label: {
                             ZStack {
                                 if selectedNode == node.name {
-                                    // 选中状态：白色填充 + 彩色边框
+                                    // 外圈发光效果
+                                    Circle()
+                                        .fill(status.color.opacity(0.2))
+                                        .frame(width: dotSize + 8, height: dotSize + 8)
+                                        .shadow(color: status.color.opacity(0.5), radius: isGlowing ? 6 : 2, x: 0, y: 0)
+                                    
+                                    // 内圈边框
                                     Circle()
                                         .stroke(status.color, lineWidth: 2)
                                         .frame(width: dotSize, height: dotSize)
+                                    
+                                    // 内部填充
                                     Circle()
-                                        .fill(.white)
+                                        .fill(status.color)
                                         .frame(width: dotSize - 4, height: dotSize - 4)
+                                        .scaleEffect(isGlowing ? 0.8 : 1)
                                 } else {
-                                    // 未选中状态：纯色填充
                                     Circle()
                                         .fill(status.color)
                                         .frame(width: dotSize, height: dotSize)
@@ -333,6 +346,12 @@ struct ProxyGroupCard: View {
                             }
                         }
                         .buttonStyle(.plain)
+                    }
+                }
+                // 将动画移到这里，确保它持续运行
+                .onChange(of: selectedNode) { _, _ in
+                    withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                        isGlowing = true
                     }
                 }
             }
@@ -454,6 +473,11 @@ struct ProxyGroupCard: View {
         .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
         .onChange(of: selectedNode) { oldValue, newValue in
             print("节点选择变化 - 组：\(name), 旧节点：\(oldValue), 新节点：\(newValue)")
+        }
+        .onAppear {
+            withAnimation {
+                isGlowing = true
+            }
         }
     }
     
