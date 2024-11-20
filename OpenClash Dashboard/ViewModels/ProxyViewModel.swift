@@ -203,60 +203,77 @@ class ProxyViewModel: ObservableObject {
     }
     
     func testGroupDelay(groupName: String, nodes: [ProxyNode]) async {
-        // print("开始测速：组名 = \(groupName), 节点数 = \(nodes.count)")
-        
-        // 修正 URL 路径
-        let urlString = "http://\(server.url):\(server.port)/group/\(groupName)/delay"
-        guard var components = URLComponents(string: urlString) else {
-            print("URL 构建失败")
-            return
-        }
-        
-        components.queryItems = [
-            URLQueryItem(name: "url", value: "https://www.gstatic.com/generate_204"),
-            URLQueryItem(name: "timeout", value: "2000")
-        ]
-        
-        guard let url = components.url else { return }
-        // print("请求 URL: \(url)")
-        
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        // 添加测试状态动画
-        await MainActor.run {
-            for node in nodes {
+        for node in nodes {
+            if node.name == "REJECT" {
+                continue
+            }
+            
+            if node.name == "DIRECT" {
+                await testNodeDelay(nodeName: "DIRECT")
+                continue
+            }
+            
+            let urlString = "http://\(server.url):\(server.port)/group/\(groupName)/delay"
+            guard var components = URLComponents(string: urlString) else { return }
+            
+            components.queryItems = [
+                URLQueryItem(name: "url", value: "https://www.gstatic.com/generate_204"),
+                URLQueryItem(name: "timeout", value: "2000")
+            ]
+            
+            guard let url = components.url else { return }
+            
+            var request = URLRequest(url: url)
+            request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            
+            // 添加测试状态动画
+            await MainActor.run {
                 testingNodes.insert(node.id)
             }
-        }
-        
-        do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            // print("收到响应数据：\(String(data: data, encoding: .utf8) ?? "")")
             
-            // 尝试解析错误消息
-            if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data) {
-                // print("API 返回错误：\(errorResponse)")
-                await MainActor.run {
-                    // 发生错误时移除所有测试状态
-                    for node in nodes {
-                        testingNodes.remove(node.id)
+            do {
+                let (data, _) = try await URLSession.shared.data(for: request)
+                // print("收到响应数据：\(String(data: data, encoding: .utf8) ?? "")")
+                
+                // 尝试解析错误消息
+                if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data) {
+                    // print("API 返回错误：\(errorResponse)")
+                    await MainActor.run {
+                        // 发生错误时移除所有测试状态
+                        for node in nodes {
+                            testingNodes.remove(node.id)
+                        }
                     }
+                    return
                 }
-                return
-            }
-            
-            // 解析延迟数据
-            let delays = try JSONDecoder().decode([String: Int].self, from: data)
-            // print("解析延迟数据：\(delays)")
-            
-            await MainActor.run {
-                // 更新所有节点的延迟
-                for (nodeName, delay) in delays {
-                    // 更新 providerNodes 中的节点
-                    for (providerName, providerNodes) in self.providerNodes {
-                        self.providerNodes[providerName] = providerNodes.map { node in
+                
+                // 解析延迟数据
+                let delays = try JSONDecoder().decode([String: Int].self, from: data)
+                // print("解析延迟数据：\(delays)")
+                
+                await MainActor.run {
+                    // 更新所有节点的延迟
+                    for (nodeName, delay) in delays {
+                        // 更新 providerNodes 中的节点
+                        for (providerName, providerNodes) in self.providerNodes {
+                            self.providerNodes[providerName] = providerNodes.map { node in
+                                if node.name == nodeName {
+                                    return ProxyNode(
+                                        id: node.id,
+                                        name: node.name,
+                                        type: node.type,
+                                        alive: node.alive,
+                                        delay: delay,
+                                        history: node.history
+                                    )
+                                }
+                                return node
+                            }
+                        }
+                        
+                        // 更新 nodes 中的节点
+                        self.nodes = self.nodes.map { node in
                             if node.name == nodeName {
                                 return ProxyNode(
                                     id: node.id,
@@ -271,31 +288,16 @@ class ProxyViewModel: ObservableObject {
                         }
                     }
                     
-                    // 更新 nodes 中的节点
-                    self.nodes = self.nodes.map { node in
-                        if node.name == nodeName {
-                            return ProxyNode(
-                                id: node.id,
-                                name: node.name,
-                                type: node.type,
-                                alive: node.alive,
-                                delay: delay,
-                                history: node.history
-                            )
-                        }
-                        return node
+                    // 从测试集合中移除所有节点
+                    for node in nodes {
+                        testingNodes.remove(node.id)
                     }
                 }
-                
-                // 从测试集合中移除所有节点
-                for node in nodes {
-                    testingNodes.remove(node.id)
+            } catch {
+                // print("测速错误：\(error)")
+                if let decodingError = error as? DecodingError {
+                    // print("解码错误详情：\(decodingError)")
                 }
-            }
-        } catch {
-            // print("测速错误：\(error)")
-            if let decodingError = error as? DecodingError {
-                // print("解码错误详情：\(decodingError)")
             }
         }
     }
@@ -314,8 +316,12 @@ class ProxyViewModel: ObservableObject {
         
         do {
             let (_, _) = try await URLSession.shared.data(for: request)
-            // 2. 选择成功后，测试新选择的代理节点延迟
-            await testNodeDelay(nodeName: proxyName)
+            
+            // 2. 选择成功后，根据节点类型决定是否测试延迟
+            if proxyName != "REJECT" {  // 不为 REJECT 节点时才测试延迟
+                await testNodeDelay(nodeName: proxyName)
+            }
+            
             // 3. 最后刷新数据
             await fetchProxies()
         } catch {
@@ -325,7 +331,10 @@ class ProxyViewModel: ObservableObject {
     
     // 添加新方法用于测试单个节点延迟
     private func testNodeDelay(nodeName: String) async {
-        guard var components = URLComponents(string: "http://\(server.url):\(server.port)/proxies/\(nodeName)/delay") else { return }
+        let urlString = "http://\(server.url):\(server.port)/proxies/\(nodeName)/delay"
+        let nodeId = nodes.first(where: { $0.name == nodeName })?.id
+        
+        guard var components = URLComponents(string: urlString) else { return }
         
         components.queryItems = [
             URLQueryItem(name: "url", value: "https://www.gstatic.com/generate_204"),
@@ -338,16 +347,29 @@ class ProxyViewModel: ObservableObject {
         request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
+        // 添加测试状态
+        if let nodeId = nodeId {
+            await MainActor.run {
+                testingNodes.insert(nodeId)
+            }
+        }
+        
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             if let delay = try? JSONDecoder().decode([String: Int].self, from: data).values.first {
                 await MainActor.run {
-                    // 更新节点延迟
                     updateNodeDelay(nodeName: nodeName, delay: delay)
+                    if let nodeId = nodeId {
+                        testingNodes.remove(nodeId)
+                    }
                 }
             }
         } catch {
-            print("Error testing node delay: \(error)")
+            if let nodeId = nodeId {
+                await MainActor.run {
+                    testingNodes.remove(nodeId)
+                }
+            }
         }
     }
     
@@ -400,6 +422,36 @@ class ProxyViewModel: ObservableObject {
             }
         } catch {
             print("Error refreshing all data: \(error)")
+        }
+    }
+    
+    // 添加一个公开的组测速方法
+    @MainActor
+    func testGroupSpeed(groupName: String) async {
+        let urlString = "http://\(server.url):\(server.port)/group/\(groupName)/delay"
+        guard var components = URLComponents(string: urlString) else { return }
+        
+        components.queryItems = [
+            URLQueryItem(name: "url", value: "https://www.gstatic.com/generate_204"),
+            URLQueryItem(name: "timeout", value: "2000")
+        ]
+        
+        guard let url = components.url else { return }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            if let delays = try? JSONDecoder().decode([String: Int].self, from: data) {
+                // 更新所有节点的延迟
+                for (nodeName, delay) in delays {
+                    updateNodeDelay(nodeName: nodeName, delay: delay)
+                }
+            }
+        } catch {
+            print("Error testing group speed: \(error)")
         }
     }
 }

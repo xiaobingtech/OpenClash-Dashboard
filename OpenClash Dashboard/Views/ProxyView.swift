@@ -191,13 +191,17 @@ struct ProxyView: View {
         let specialNodes = ["DIRECT", "REJECT"]
         let matchedNodes = nodeNames.compactMap { name in
             if specialNodes.contains(name) {
-                // 对于特殊节点，创建一个虚拟的 ProxyNode
+                // 先尝试从现有节点中查找
+                if let existingNode = allNodes.first(where: { $0.name == name }) {
+                    return existingNode
+                }
+                // 如果找不到，再创建新的节点
                 return ProxyNode(
                     id: UUID().uuidString,
                     name: name,
                     type: "Special",
                     alive: true,
-                    delay: 0,
+                    delay: 0,  // 初始延迟为0
                     history: []
                 )
             }
@@ -238,7 +242,7 @@ struct ProxyGroupCard: View {
     private let dotSize: CGFloat = 12
     
     private func isSpecialNode(_ name: String) -> Bool {
-        ["DIRECT", "REJECT", "PROXY"].contains(name)
+        return false
     }
     
     private func getNodeBackground(_ node: ProxyNode) -> Color {
@@ -271,7 +275,17 @@ struct ProxyGroupCard: View {
                 // 测速按钮
                 Button {
                     Task {
-                        await viewModel.testGroupDelay(groupName: name, nodes: nodes)
+                        // 添加测试状态
+                        for node in nodes {
+                            viewModel.testingNodes.insert(node.id)
+                        }
+                        
+                        await viewModel.testGroupSpeed(groupName: name)
+                        
+                        // 清除测试状态
+                        for node in nodes {
+                            viewModel.testingNodes.remove(node.id)
+                        }
                     }
                 } label: {
                     Image(systemName: "bolt")
@@ -350,32 +364,37 @@ struct ProxyGroupCard: View {
                                     }
                                     
                                     HStack(spacing: 6) {
-                                        if !isSpecialNode(node.name) {
-                                            Text(node.type)
+                                        Text(node.type)
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(.blue.opacity(0.8))
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(.blue.opacity(0.1))
+                                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                                        
+                                        Spacer()
+                                        
+                                        if node.name == "REJECT" {
+                                            Text("阻断")
                                                 .font(.system(size: 12))
-                                                .foregroundStyle(.blue.opacity(0.8))
+                                                .foregroundStyle(.red)
                                                 .padding(.horizontal, 6)
                                                 .padding(.vertical, 2)
-                                                .background(.blue.opacity(0.1))
+                                                .background(.red.opacity(0.1))
                                                 .clipShape(RoundedRectangle(cornerRadius: 4))
-                                            
-                                            Spacer()
-                                            
-                                            if node.delay > 0 {
-                                                HStack {
-                                                    if viewModel.testingNodes.contains(node.id) {
-                                                        ProgressView()
-                                                            .scaleEffect(0.7)
-                                                    } else {
-                                                        Text("\(node.delay) ms")
-                                                    }
-                                                }
-                                                .font(.system(size: 12))
-                                                .foregroundStyle(getDelayTextColor(delay: node.delay))
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 2)
-                                                .background(getDelayTextColor(delay: node.delay).opacity(0.1))
-                                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                                        } else if node.name == "DIRECT" {
+                                            if viewModel.testingNodes.contains(node.id) {
+                                                ProgressView()
+                                                    .scaleEffect(0.6)
+                                                    .frame(width: 30)
+                                            } else if node.delay > 0 {
+                                                Text("\(node.delay) ms")
+                                                    .font(.system(size: 12))
+                                                    .foregroundStyle(getDelayTextColor(delay: node.delay))
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 2)
+                                                    .background(getDelayTextColor(delay: node.delay).opacity(0.1))
+                                                    .clipShape(RoundedRectangle(cornerRadius: 4))
                                             } else {
                                                 Text("超时")
                                                     .font(.system(size: 12))
@@ -385,9 +404,29 @@ struct ProxyGroupCard: View {
                                                     .background(Color.secondary.opacity(0.1))
                                                     .clipShape(RoundedRectangle(cornerRadius: 4))
                                             }
+                                        } else if node.delay > 0 {
+                                            HStack {
+                                                if viewModel.testingNodes.contains(node.id) {
+                                                    ProgressView()
+                                                        .scaleEffect(0.7)
+                                                } else {
+                                                    Text("\(node.delay) ms")
+                                                }
+                                            }
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(getDelayTextColor(delay: node.delay))
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(getDelayTextColor(delay: node.delay).opacity(0.1))
+                                            .clipShape(RoundedRectangle(cornerRadius: 4))
                                         } else {
-                                            Color.clear
-                                                .frame(height: 24)
+                                            Text("超时")
+                                                .font(.system(size: 12))
+                                                .foregroundStyle(.secondary)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(Color.secondary.opacity(0.1))
+                                                .clipShape(RoundedRectangle(cornerRadius: 4))
                                         }
                                     }
                                 }
@@ -610,7 +649,7 @@ struct ProxyProviderCard: View {
             return "刚刚"
         } else if interval < 3600 {
             let minutes = Int(interval / 60)
-            return "\(minutes) 分钟前"
+            return "\(minutes) 钟前"
         } else if interval < 86400 {
             let hours = Int(interval / 3600)
             return "\(hours) 小时前"
