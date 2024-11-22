@@ -6,79 +6,106 @@ struct ConnectionRow: View {
     let viewModel: ConnectionsViewModel
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
             // 第一行：时间信息和关闭按钮
             HStack {
-                // 时间信息
-                HStack(spacing: 4) {
-                    Image(systemName: "clock")
-                        .foregroundColor(.black)
+                HStack(spacing: 6) {
+                    Image(systemName: "clock.fill")
+                        .foregroundColor(.secondary)
+                        .imageScale(.small)
                     Text(connection.formattedStartTime)
-                        .foregroundColor(.black)
+                        .foregroundColor(.secondary)
                     Text("#\(connection.formattedDuration)")
-                        .foregroundColor(.black)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.1))
+                        .cornerRadius(4)
                 }
+                .font(.footnote)
                 
                 Spacer()
                 
-                // 关闭按钮
-                // 关闭按钮
                 Button(action: {
                     viewModel.closeConnection(connection.id)
                 }) {
-                    Image(systemName: "xmark.circle")
+                    Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.secondary)
+                        .imageScale(.medium)
                 }
             }
- 
             
             // 第二行：主机信息
-            HStack(spacing: 4) {
-                Image(systemName: "globe")
-                    .foregroundColor(.black)
+            HStack(spacing: 6) {
+                Image(systemName: "globe.americas.fill")
+                    .foregroundColor(.accentColor)
                 Text("\(connection.metadata.host.isEmpty ? connection.metadata.destinationIP : connection.metadata.host):\(connection.metadata.destinationPort)")
+                    .foregroundColor(.primary)
             }
             .font(.system(size: 16, weight: .medium))
-            .foregroundColor(.black)
             
             // 第三行：规则链
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
                 Image(systemName: "arrow.triangle.branch")
-                    .foregroundColor(.black)
+                    .foregroundColor(.orange)
+                    .imageScale(.small)
                 Text(connection.formattedChains)
+                    .foregroundColor(.secondary)
             }
-            .font(.system(size: 13))
-            .foregroundColor(.black)
+            .font(.callout)
             
             // 第四行：网络信息和流量
             HStack {
                 // 网络类型和源IP信息
-                HStack(spacing: 4) {
-                    Text("\(connection.metadata.type.uppercased())")
-                                            .foregroundColor(.black)
-                    Text("\(connection.metadata.network.uppercased())")
-                        .foregroundColor(.black)
+                HStack(spacing: 6) {
+                    Text(connection.metadata.type.uppercased())
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.1))
+                        .foregroundColor(.blue)
+                        .cornerRadius(4)
+                    
+                    Text(connection.metadata.network.uppercased())
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.green.opacity(0.1))
+                        .foregroundColor(.green)
+                        .cornerRadius(4)
+                    
                     Text("\(connection.metadata.sourceIP):\(connection.metadata.sourcePort)")
-                        .foregroundColor(.black)
+                        .foregroundColor(.secondary)
+                        .font(.caption)
                 }
                 
                 Spacer()
                 
                 // 流量信息
                 HStack(spacing: 8) {
-                    Text(viewModel.formatBytes(connection.download))
-                        .foregroundColor(.blue)
-                    Text(viewModel.formatBytes(connection.upload))
-                        .foregroundColor(.green)
+                    HStack(spacing: 2) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .foregroundColor(.blue)
+                        Text(viewModel.formatBytes(connection.download))
+                            .foregroundColor(.blue)
+                    }
+                    HStack(spacing: 2) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .foregroundColor(.green)
+                        Text(viewModel.formatBytes(connection.upload))
+                            .foregroundColor(.green)
+                    }
                 }
+                .font(.footnote)
             }
-            .font(.system(size: 13))
         }
-        .padding(.vertical, 8)
-        .contentShape(Rectangle()) // 确保整个区域可点击
-        .onTapGesture {
-            viewModel.closeConnection(connection.id)
-        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
     }
 }
 

@@ -102,6 +102,9 @@ struct ConnectionsView: View {
             List {
                 ForEach(filteredConnections) { connection in
                     ConnectionRow(connection: connection, viewModel: viewModel)
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                         .swipeActions {
                             Button(role: .destructive) {
                                 viewModel.closeConnection(connection.id)
@@ -111,8 +114,9 @@ struct ConnectionsView: View {
                         }
                 }
             }
-            .id(listId)
             .listStyle(.plain)
+            .background(Color(.systemGroupedBackground))
+            .id(listId)
             .overlay {
                 if filteredConnections.isEmpty {
                     ContentUnavailableView(

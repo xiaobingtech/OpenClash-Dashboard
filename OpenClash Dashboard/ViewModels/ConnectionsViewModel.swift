@@ -11,18 +11,31 @@ class ConnectionsViewModel: ObservableObject {
     private let session = URLSession(configuration: .default)
     private var server: ClashServer?
     
+    private var isMonitoring = false
+    
     func startMonitoring(server: ClashServer) {
+        guard !isMonitoring else { return }
+        
         self.server = server
+        isMonitoring = true
         connectToConnections(server: server)
     }
     
     func stopMonitoring() {
+        guard isMonitoring else { return }
+        
+        isMonitoring = false
         connectionsTask?.cancel()
         connectionsTask = nil
-        isConnected = false
+        
+        DispatchQueue.main.async { [weak self] in
+            self?.isConnected = false
+        }
     }
     
     private func connectToConnections(server: ClashServer) {
+        guard isMonitoring else { return }
+        
         guard let url = URL(string: "ws://\(server.url):\(server.port)/connections") else {
             print("❌ URL 构建失败")
             return 
@@ -49,41 +62,43 @@ class ConnectionsViewModel: ObservableObject {
     }
     
     private func receiveConnectionsData() {
-        print("👂 开始监听 WebSocket 消息")
+        guard isMonitoring else { return }
+        
         connectionsTask?.receive { [weak self] result in
+            guard let self = self, self.isMonitoring else { return }
+            
             switch result {
             case .success(let message):
                 print("✅ 收到 WebSocket 消息")
                 switch message {
                 case .string(let text):
                     print("📨 收到文本消息，长度: \(text.count)")
-                    self?.handleConnectionsData(text)
+                    self.handleConnectionsData(text)
                 case .data(let data):
                     print("📨 收到二进制消息，长度: \(data.count)")
                     if let text = String(data: data, encoding: .utf8) {
-                        self?.handleConnectionsData(text)
+                        self.handleConnectionsData(text)
                     }
                 @unknown default:
                     print("❓ 收到未知类型的消息")
                     break
                 }
-                self?.receiveConnectionsData() // 继续接收数据
+                self.receiveConnectionsData() // 继续接收数据
                 
             case .failure(let error):
-                print("❌ WebSocket 错误: \(error)")
-                print("❌ 错误描述: \(error.localizedDescription)")
-                if let nsError = error as? NSError {
-                    print("❌ 错误域: \(nsError.domain)")
-                    print("❌ 错误代码: \(nsError.code)")
-                    print("❌ 错误信息: \(nsError.userInfo)")
+                if (error as NSError).code == NSURLErrorCancelled {
+                    print("📡 WebSocket 连接已取消")
+                    return
                 }
                 
+                print("❌ WebSocket 错误: \(error)")
+                
                 DispatchQueue.main.async {
-                    self?.isConnected = false
-                    // 尝试重新连接
-                    if let server = self?.server {
+                    self.isConnected = false
+                    // 只有在仍然监控时才重新连接
+                    if self.isMonitoring, let server = self.server {
                         print("🔄 尝试重新连接...")
-                        self?.connectToConnections(server: server)
+                        self.connectToConnections(server: server)
                     }
                 }
             }
@@ -126,7 +141,7 @@ class ConnectionsViewModel: ObservableObject {
     func refresh() async {
         stopMonitoring()
         if let server = server {
-            connectToConnections(server: server)
+            startMonitoring(server: server)
         }
     }
     
