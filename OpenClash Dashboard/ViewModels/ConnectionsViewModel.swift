@@ -84,6 +84,36 @@ class ConnectionsViewModel: ObservableObject {
     
     private var previousConnections: [String: ClashConnection] = [:]
     
+    private var reconnectTask: Task<Void, Never>?
+    private var isReconnecting = false
+    
+    // 添加错误追踪
+    private struct ErrorTracker {
+        var count: Int = 0
+        var firstErrorTime: Date?
+        
+        mutating func recordError() -> Bool {
+            let now = Date()
+            
+            // 如果是第一个错误或者距离第一个错误超过5秒，重置计数
+            if firstErrorTime == nil || now.timeIntervalSince(firstErrorTime!) > 5 {
+                count = 1
+                firstErrorTime = now
+                return false
+            }
+            
+            count += 1
+            return count >= 3 // 返回是否达到阈值
+        }
+        
+        mutating func reset() {
+            count = 0
+            firstErrorTime = nil
+        }
+    }
+    
+    private var errorTracker = ErrorTracker()
+    
     private func log(_ message: String) {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "HH:mm:ss.SSS"
@@ -104,20 +134,23 @@ class ConnectionsViewModel: ObservableObject {
         guard isMonitoring else { return }
         
         isMonitoring = false
+        reconnectTask?.cancel()
+        reconnectTask = nil
         connectionsTask?.cancel()
         connectionsTask = nil
+        errorTracker.reset() // 重置错误计数
         
         DispatchQueue.main.async { [weak self] in
             self?.connectionState = .disconnected
-            // 停止监控时也不清空连接列表
-            // self?.connections = []
-            // self?.totalUpload = 0
-            // self?.totalDownload = 0
         }
     }
     
     private func connectToConnections(server: ClashServer) {
         guard isMonitoring else { return }
+        
+        // 取消之前的重连任务
+        reconnectTask?.cancel()
+        reconnectTask = nil
         
         guard let url = URL(string: "ws://\(server.url):\(server.port)/connections") else {
             log("❌ URL 构建失败")
@@ -126,51 +159,94 @@ class ConnectionsViewModel: ObservableObject {
             }
             return 
         }
-        log("🔄 正在连接 WebSocket: \(url.absoluteString)")
         
-        // 创建请求
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 5  // 添加超时时间
-        
-        // 添加认证头
+        // 先测试 HTTP 连接
+        var testRequest = URLRequest(url: URL(string: "http://\(server.url):\(server.port)")!)
         if !server.secret.isEmpty {
-            request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+            testRequest.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
         }
         
-        // 添加其他必要的头部
-        request.setValue("websocket", forHTTPHeaderField: "Upgrade")
-        request.setValue("Upgrade", forHTTPHeaderField: "Connection")
-        request.setValue("13", forHTTPHeaderField: "Sec-WebSocket-Version")
-        
-        // 先进行 HTTP 连接测试
-        let testRequest = URLRequest(url: URL(string: "http://\(server.url):\(server.port)")!)
-        URLSession.shared.dataTask(with: testRequest) { [weak self] _, response, error in
-            guard let self = self else { return }
-            
-            if let error = error {
-                self.log("❌ HTTP 连接测试失败: \(error.localizedDescription)")
-                DispatchQueue.main.async {
-                    self.connectionState = .error("服务器连接失败: \(error.localizedDescription)")
+        Task {
+            do {
+                let (_, response) = try await URLSession.shared.data(for: testRequest)
+                if let httpResponse = response as? HTTPURLResponse {
+                    log("✅ HTTP 连接测试状态码: \(httpResponse.statusCode)")
+                    
+                    if httpResponse.statusCode == 401 {
+                        DispatchQueue.main.async { [weak self] in
+                            self?.connectionState = .error("认证失败，请检查 Secret")
+                        }
+                        return
+                    }
                 }
-                return
+                
+                // 创建 WebSocket 请求
+                var request = URLRequest(url: url)
+                request.timeoutInterval = 5
+                
+                if !server.secret.isEmpty {
+                    request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+                }
+                
+                // 取消现有连接
+                connectionsTask?.cancel()
+                connectionsTask = nil
+                
+                // 创建新连接
+                let task = session.webSocketTask(with: request)
+                connectionsTask = task
+                
+                // 设置消息处理
+                task.resume()
+                receiveConnectionsData()
+                
+            } catch {
+                log("❌ HTTP 连接测试失败: \(error.localizedDescription)")
+                handleConnectionError(error)
+            }
+        }
+    }
+    
+    private func handleConnectionError(_ error: Error) {
+        log("❌ 连接错误: \(error)")
+        
+        if let nsError = error as? NSError {
+            self.log("错误域: \(nsError.domain)")
+            self.log("错误代码: \(nsError.code)")
+            self.log("错误描述: \(nsError.localizedDescription)")
+            if let failingURL = nsError.userInfo["NSErrorFailingURLKey"] as? URL {
+                self.log("失败的 URL: \(failingURL)")
             }
             
-            if let httpResponse = response as? HTTPURLResponse {
-                self.log("✅ HTTP 连接测试状态码: \(httpResponse.statusCode)")
+            // 添加更多错误信息诊断
+            if nsError.domain == NSPOSIXErrorDomain && nsError.code == 57 {
+                self.log("🔍 诊断: Socket 未连接错误，可能原因：")
+                self.log("1. 服务器未运行或不可达")
+                self.log("2. WebSocket 端口未开放")
+                self.log("3. 网络连接问题")
+                self.log("4. 防火墙阻止")
             }
+        }
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.connectionState = .disconnected
+        }
+        
+        // 使用 Task 进行重连，避免多个重连任务
+        guard !isReconnecting else { return }
+        isReconnecting = true
+        
+        reconnectTask = Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000) // 3秒
+            guard !Task.isCancelled else { return }
             
-            // 创建 WebSocket 任务
-            self.connectionsTask?.cancel()
-            self.connectionsTask = nil
-            
-            let task = self.session.webSocketTask(with: request)
-            self.connectionsTask = task
-            
-            // 设置消息处理
-            task.resume()
-            self.receiveConnectionsData()
-            
-        }.resume()
+            if let server = self.server {
+                log("🔄 正在重新连接...")
+                connectToConnections(server: server)
+            }
+            isReconnecting = false
+        }
     }
     
     private func receiveConnectionsData() {
@@ -181,6 +257,9 @@ class ConnectionsViewModel: ObservableObject {
             
             switch result {
             case .success(let message):
+                // 成功接收消息时重置错误计数
+                self.errorTracker.reset()
+                
                 switch message {
                 case .string(let text):
                     if let data = text.data(using: .utf8) {
@@ -198,6 +277,9 @@ class ConnectionsViewModel: ObservableObject {
             case .failure(let error):
                 self.log("❌ WebSocket 错误: \(error)")
                 
+                // 记录错误并检查是否需要显示断开警告
+                let shouldShowError = self.errorTracker.recordError()
+                
                 // 详细的错误诊断
                 if let nsError = error as? NSError {
                     self.log("错误域: \(nsError.domain)")
@@ -207,7 +289,6 @@ class ConnectionsViewModel: ObservableObject {
                         self.log("失败的 URL: \(failingURL)")
                     }
                     
-                    // 添加更多错误信息诊断
                     if nsError.domain == NSPOSIXErrorDomain && nsError.code == 57 {
                         self.log("🔍 诊断: Socket 未连接错误，可能原因：")
                         self.log("1. 服务器未运行或不可达")
@@ -217,9 +298,12 @@ class ConnectionsViewModel: ObservableObject {
                     }
                 }
                 
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
-                    self.connectionState = .disconnected
+                // 只有在达到错误阈值时才更新UI状态
+                if shouldShowError {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self = self else { return }
+                        self.connectionState = .disconnected
+                    }
                 }
                 
                 // 延迟重试
