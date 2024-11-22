@@ -412,35 +412,6 @@ struct RulesView: View {
     }
 }
 
-struct ConnectionsView: View {
-    let server: ClashServer
-    @StateObject private var viewModel = ConnectionsViewModel()
-    
-    var body: some View {
-        List {
-            ForEach(0..<10) { index in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("connection\(index).example.com")
-                        .font(.headline)
-                    Text("192.168.1.\(index):8080 → 10.0.0.\(index):443")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    HStack {
-                        Label("\(Int.random(in: 1...100))KB", systemImage: "arrow.up")
-                        Label("\(Int.random(in: 1...1000))KB", systemImage: "arrow.down")
-                    }
-                    .font(.caption)
-                    .foregroundColor(.blue)
-                }
-                .padding(.vertical, 4)
-            }
-        }
-        .refreshable {
-            // 刷新连接列表
-        }
-    }
-}
-
 struct SettingsView: View {
     let server: ClashServer
     @StateObject private var viewModel = SettingsViewModel()

@@ -23,6 +23,7 @@ class NetworkMonitor: ObservableObject {
     }
     
     func stopMonitoring() {
+        print("停止所有 WebSocket 连接")
         trafficTask?.cancel()
         memoryTask?.cancel()
         connectionsTask?.cancel()
@@ -30,6 +31,8 @@ class NetworkMonitor: ObservableObject {
     
     private func connectToTraffic(server: ClashServer) {
         guard let url = URL(string: "ws://\(server.url):\(server.port)/traffic") else { return }
+        print("正在连接 Traffic WebSocket: \(url.absoluteString)")
+        
         var request = URLRequest(url: url)
         if !server.secret.isEmpty {
             request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
@@ -42,6 +45,8 @@ class NetworkMonitor: ObservableObject {
     
     private func connectToMemory(server: ClashServer) {
         guard let url = URL(string: "ws://\(server.url):\(server.port)/memory") else { return }
+        print("正在连接 Memory WebSocket: \(url.absoluteString)")
+        
         var request = URLRequest(url: url)
         if !server.secret.isEmpty {
             request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
@@ -54,6 +59,8 @@ class NetworkMonitor: ObservableObject {
     
     private func connectToConnections(server: ClashServer) {
         guard let url = URL(string: "ws://\(server.url):\(server.port)/connections") else { return }
+        print("正在连接 Connections WebSocket: \(url.absoluteString)")
+        
         var request = URLRequest(url: url)
         if !server.secret.isEmpty {
             request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
@@ -68,6 +75,7 @@ class NetworkMonitor: ObservableObject {
         trafficTask?.receive { [weak self] result in
             switch result {
             case .success(let message):
+                print("Traffic WebSocket 已连接并接收数据")
                 switch message {
                 case .string(let text):
                     self?.handleTrafficData(text)
@@ -80,7 +88,7 @@ class NetworkMonitor: ObservableObject {
                 }
                 self?.receiveTrafficData() // 继续接收数据
             case .failure(let error):
-                print("Traffic WebSocket Error: \(error)")
+                print("Traffic WebSocket 错误: \(error)")
             }
         }
     }
@@ -89,6 +97,7 @@ class NetworkMonitor: ObservableObject {
         memoryTask?.receive { [weak self] result in
             switch result {
             case .success(let message):
+                print("Memory WebSocket 已连接并接收数据")
                 switch message {
                 case .string(let text):
                     self?.handleMemoryData(text)
@@ -101,7 +110,7 @@ class NetworkMonitor: ObservableObject {
                 }
                 self?.receiveMemoryData() // 继续接收数据
             case .failure(let error):
-                print("Memory WebSocket Error: \(error)")
+                print("Memory WebSocket 错误: \(error)")
             }
         }
     }
@@ -110,6 +119,7 @@ class NetworkMonitor: ObservableObject {
         connectionsTask?.receive { [weak self] result in
             switch result {
             case .success(let message):
+                print("Connections WebSocket 已连接并接收数据")
                 switch message {
                 case .string(let text):
                     self?.handleConnectionsData(text)
@@ -122,7 +132,7 @@ class NetworkMonitor: ObservableObject {
                 }
                 self?.receiveConnectionsData() // 继续接收数据
             case .failure(let error):
-                print("Connections WebSocket Error: \(error)")
+                print("Connections WebSocket 错误: \(error)")
             }
         }
     }
