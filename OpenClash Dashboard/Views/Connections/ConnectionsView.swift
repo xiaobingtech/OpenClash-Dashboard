@@ -7,7 +7,11 @@ struct ConnectionsView: View {
     @State private var selectedProtocols: Set<String> = ["TCP", "UDP"]
     @State private var showClosed = false
     
-    @State private var listId = UUID()
+    // 添加定时器状态
+    @State private var timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    
+    // 添加连接状态属性
+    @State private var isConnecting = false
     
     private var filteredConnections: [ClashConnection] {
         viewModel.connections.filter { connection in
@@ -37,33 +41,35 @@ struct ConnectionsView: View {
     var body: some View {
         VStack(spacing: 0) {
             // 连接状态栏
-            if !viewModel.isConnected {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.yellow)
-                    Text("正在连接服务器...")
-                        .font(.footnote)
-                    Spacer()
+            HStack {
+                // 状态信息
+                Image(systemName: viewModel.connectionState.statusIcon)
+                    .foregroundColor(viewModel.connectionState.statusColor)
+                    .rotationEffect(viewModel.connectionState.isConnecting ? .degrees(360) : .degrees(0))
+                    .animation(viewModel.connectionState.isConnecting ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: viewModel.connectionState)
+                
+                Text(viewModel.connectionState.message)
+                    .font(.footnote)
+                
+                if viewModel.connectionState.isConnecting {
                     ProgressView()
                         .scaleEffect(0.8)
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
-                .background(Color.yellow.opacity(0.1))
-            }
-            
-            // 流量统计栏
-            HStack {
-                Label(viewModel.formatBytes(viewModel.totalDownload), systemImage: "arrow.down.circle.fill")
-                    .foregroundColor(.blue)
+                
                 Spacer()
-                Label(viewModel.formatBytes(viewModel.totalUpload), systemImage: "arrow.up.circle.fill")
-                    .foregroundColor(.green)
+                
+                // 流量统计
+                HStack(spacing: 12) {
+                    Label(viewModel.formatBytes(viewModel.totalDownload), systemImage: "arrow.down.circle.fill")
+                        .foregroundColor(.blue)
+                    Label(viewModel.formatBytes(viewModel.totalUpload), systemImage: "arrow.up.circle.fill")
+                        .foregroundColor(.green)
+                }
+                .font(.footnote)
             }
-            .font(.footnote)
             .padding(.horizontal)
             .padding(.vertical, 8)
-            .background(Color.secondary.opacity(0.1))
+            .background(viewModel.connectionState.statusColor.opacity(0.1))
             
             // 过滤标签栏
             ScrollView(.horizontal, showsIndicators: false) {
@@ -99,24 +105,16 @@ struct ConnectionsView: View {
             }
             
             // 连接列表
-            List {
-                ForEach(filteredConnections) { connection in
-                    ConnectionRow(connection: connection, viewModel: viewModel)
-                        .listRowInsets(EdgeInsets())
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .swipeActions {
-                            Button(role: .destructive) {
-                                viewModel.closeConnection(connection.id)
-                            } label: {
-                                Label("关闭", systemImage: "xmark.circle")
-                            }
-                        }
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(filteredConnections) { connection in
+                        ConnectionRow(connection: connection, viewModel: viewModel)
+                    }
                 }
+                .animation(.default, value: filteredConnections)
             }
             .listStyle(.plain)
             .background(Color(.systemGroupedBackground))
-            .id(listId)
             .overlay {
                 if filteredConnections.isEmpty {
                     ContentUnavailableView(
@@ -143,11 +141,7 @@ struct ConnectionsView: View {
         }
         .onDisappear {
             viewModel.stopMonitoring()
-        }
-        .onChange(of: viewModel.connections) { _, newConnections in
-            print("🔄 连接数据已更新，当前连接数: \(newConnections.count)")
-            print("🔍 过滤后的连接数: \(filteredConnections.count)")
-            listId = UUID()
+            timer.upstream.connect().cancel()
         }
     }
 }
