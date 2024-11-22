@@ -120,7 +120,7 @@ class ConnectionsViewModel: ObservableObject {
         guard isMonitoring else { return }
         
         guard let url = URL(string: "ws://\(server.url):\(server.port)/connections") else {
-            log("�� URL 构建失败")
+            log("❌ URL 构建失败")
             DispatchQueue.main.async { [weak self] in
                 self?.connectionState = .error("URL 构建失败")
             }
@@ -128,32 +128,49 @@ class ConnectionsViewModel: ObservableObject {
         }
         log("🔄 正在连接 WebSocket: \(url.absoluteString)")
         
-        // 重置所有状态
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.connectionState = .connecting  // 先设置状态
-            self.connections = []
-            self.totalUpload = 0
-            self.totalDownload = 0
-            self.previousConnections = [:]
-        }
-        
-        // 取消现有的任务
-        connectionsTask?.cancel()
-        connectionsTask = nil
-        
-        // 创建新的任务
+        // 创建请求
         var request = URLRequest(url: url)
+        request.timeoutInterval = 5  // 添加超时时间
+        
+        // 添加认证头
         if !server.secret.isEmpty {
             request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
         }
         
-        let task = session.webSocketTask(with: request)
-        connectionsTask = task
-        task.resume()
+        // 添加其他必要的头部
+        request.setValue("websocket", forHTTPHeaderField: "Upgrade")
+        request.setValue("Upgrade", forHTTPHeaderField: "Connection")
+        request.setValue("13", forHTTPHeaderField: "Sec-WebSocket-Version")
         
-        // 开始接收消息
-        receiveConnectionsData()
+        // 先进行 HTTP 连接测试
+        let testRequest = URLRequest(url: URL(string: "http://\(server.url):\(server.port)")!)
+        URLSession.shared.dataTask(with: testRequest) { [weak self] _, response, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                self.log("❌ HTTP 连接测试失败: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    self.connectionState = .error("服务器连接失败: \(error.localizedDescription)")
+                }
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                self.log("✅ HTTP 连接测试状态码: \(httpResponse.statusCode)")
+            }
+            
+            // 创建 WebSocket 任务
+            self.connectionsTask?.cancel()
+            self.connectionsTask = nil
+            
+            let task = self.session.webSocketTask(with: request)
+            self.connectionsTask = task
+            
+            // 设置消息处理
+            task.resume()
+            self.receiveConnectionsData()
+            
+        }.resume()
     }
     
     private func receiveConnectionsData() {
@@ -181,16 +198,31 @@ class ConnectionsViewModel: ObservableObject {
             case .failure(let error):
                 self.log("❌ WebSocket 错误: \(error)")
                 
+                // 详细的错误诊断
+                if let nsError = error as? NSError {
+                    self.log("错误域: \(nsError.domain)")
+                    self.log("错误代码: \(nsError.code)")
+                    self.log("错误描述: \(nsError.localizedDescription)")
+                    if let failingURL = nsError.userInfo["NSErrorFailingURLKey"] as? URL {
+                        self.log("失败的 URL: \(failingURL)")
+                    }
+                    
+                    // 添加更多错误信息诊断
+                    if nsError.domain == NSPOSIXErrorDomain && nsError.code == 57 {
+                        self.log("🔍 诊断: Socket 未连接错误，可能原因：")
+                        self.log("1. 服务器未运行或不可达")
+                        self.log("2. WebSocket 端口未开放")
+                        self.log("3. 网络连接问题")
+                        self.log("4. 防火墙阻止")
+                    }
+                }
+                
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
                     self.connectionState = .disconnected
-                    // 不清空连接列表，保持现有显示
-                    // self.connections = []
-                    // self.totalUpload = 0
-                    // self.totalDownload = 0
                 }
                 
-                // 延迟3秒后重试
+                // 延迟重试
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
                     guard let self = self else { return }
                     self.log("🔄 正在重新连接...")
