@@ -11,9 +11,10 @@ struct ClashConnection: Identifiable, Codable, Equatable {
     let rulePayload: String
     let downloadSpeed: Double
     let uploadSpeed: Double
+    let isAlive: Bool
     
     // 添加一个标准初始化方法
-    init(id: String, metadata: ConnectionMetadata, upload: Int, download: Int, start: Date, chains: [String], rule: String, rulePayload: String, downloadSpeed: Double, uploadSpeed: Double) {
+    init(id: String, metadata: ConnectionMetadata, upload: Int, download: Int, start: Date, chains: [String], rule: String, rulePayload: String, downloadSpeed: Double, uploadSpeed: Double, isAlive: Bool) {
         self.id = id
         self.metadata = metadata
         self.upload = upload
@@ -24,6 +25,7 @@ struct ClashConnection: Identifiable, Codable, Equatable {
         self.rulePayload = rulePayload
         self.downloadSpeed = downloadSpeed
         self.uploadSpeed = uploadSpeed
+        self.isAlive = isAlive
     }
     
     // 解码器初始化方法
@@ -40,6 +42,9 @@ struct ClashConnection: Identifiable, Codable, Equatable {
         // 将速度字段设为可选，默认为 0
         downloadSpeed = try container.decodeIfPresent(Double.self, forKey: .downloadSpeed) ?? 0
         uploadSpeed = try container.decodeIfPresent(Double.self, forKey: .uploadSpeed) ?? 0
+        
+        // 设置 isAlive 默认为 true，因为从服务器接收的连接都是活跃的
+        isAlive = try container.decodeIfPresent(Bool.self, forKey: .isAlive) ?? true
         
         let dateString = try container.decode(String.self, forKey: .start)
         let formatter = ISO8601DateFormatter()
@@ -114,7 +119,8 @@ struct ClashConnection: Identifiable, Codable, Equatable {
             rule: "RuleSet",
             rulePayload: "YouTube",
             downloadSpeed: 1024.0,
-            uploadSpeed: 512.0
+            uploadSpeed: 512.0,
+            isAlive: true
         )
     }
 }
@@ -152,4 +158,10 @@ struct ConnectionsResponse: Codable {
     let uploadTotal: Int
     let connections: [ClashConnection]
     let memory: Int
+}
+
+// 添加编码键
+private enum CodingKeys: String, CodingKey {
+    case id, metadata, upload, download, start, chains, rule, rulePayload
+    case downloadSpeed, uploadSpeed, isAlive
 } 

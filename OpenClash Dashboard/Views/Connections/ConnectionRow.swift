@@ -43,7 +43,7 @@ struct ConnectionRow: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // 第一行：时间信息和关闭按钮
+            // 第一行：时间信息和关闭按钮/状态指示器
             HStack {
                 HStack(spacing: 6) {
                     Image(systemName: "clock.fill")
@@ -62,12 +62,28 @@ struct ConnectionRow: View {
                 
                 Spacer()
                 
-                Button(action: {
-                    viewModel.closeConnection(connection.id)
-                }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.secondary)
-                        .frame(width: 20, height: 20)
+                // 根据连接状态显示不同的按钮/指示器
+                if connection.isAlive {
+                    // 活跃连接显示关闭按钮
+                    Button(action: {
+                        viewModel.closeConnection(connection.id)
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                            .frame(width: 20, height: 20)
+                    }
+                } else {
+                    Text("已断开")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.1))
+                    .cornerRadius(4)
+                    // 已关闭连接显示状态指示器
+                    // Image(systemName: "circle.slash")
+                    //     .foregroundColor(.secondary)
+                    //     .frame(width: 20, height: 20)
                 }
             }
             
@@ -150,6 +166,17 @@ struct ConnectionRow: View {
                 }
                 .font(.footnote)
             }
+            
+            // 添加状态指示器
+            // if !connection.isAlive {
+            //     Text("已断开")
+            //         .font(.caption)
+            //         .foregroundColor(.secondary)
+            //         .padding(.horizontal, 6)
+            //         .padding(.vertical, 2)
+            //         .background(Color.secondary.opacity(0.1))
+            //         .cornerRadius(4)
+            // }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -158,6 +185,7 @@ struct ConnectionRow: View {
         .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
+        .opacity(connection.isAlive ? 1 : 0.6) // 已断开连接显示为半透明
     }
 }
 

@@ -318,6 +318,9 @@ class ConnectionsViewModel: ObservableObject {
         }
     }
     
+    private let maxHistoryCount = 200
+    private var connectionHistory: [String: ClashConnection] = [:] // 用于存储历史记录
+    
     private func handleConnectionsMessage(_ data: Data) {
         do {
             let response = try JSONDecoder().decode(ConnectionsResponse.self, from: data)
@@ -325,32 +328,30 @@ class ConnectionsViewModel: ObservableObject {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 
-                // 如果之前状态不是已连接，打印连接成功日志
+                // 更新状态和流量数据
                 if self.connectionState != .connected {
                     log("✅ WebSocket 已连接")
                 }
-                
-                // 更新连接状态为已连接
                 self.connectionState = .connected
-                
-                // 更新其他数据
                 self.totalUpload = response.uploadTotal
                 self.totalDownload = response.downloadTotal
                 
-                var updatedConnections: [ClashConnection] = []
+                var hasChanges = false
+                let currentIds = Set(response.connections.map { $0.id })
                 
+                // 更新现有连接状态
                 for connection in response.connections {
                     let previousConnection = self.previousConnections[connection.id]
                     
-                    // 计算速度（字节/秒）
+                    // 计算速度
                     let uploadSpeed = previousConnection.map { 
-                        Double(connection.upload - $0.upload) / 1.0 // 1秒间隔
+                        Double(connection.upload - $0.upload) / 1.0
                     } ?? 0
                     let downloadSpeed = previousConnection.map { 
-                        Double(connection.download - $0.download) / 1.0 // 1秒间隔
+                        Double(connection.download - $0.download) / 1.0
                     } ?? 0
                     
-                    // 创建包含速度信息的新连接对象
+                    // 创建更新后的连接对象
                     let updatedConnection = ClashConnection(
                         id: connection.id,
                         metadata: connection.metadata,
@@ -361,17 +362,83 @@ class ConnectionsViewModel: ObservableObject {
                         rule: connection.rule,
                         rulePayload: connection.rulePayload,
                         downloadSpeed: max(0, downloadSpeed),
-                        uploadSpeed: max(0, uploadSpeed)
+                        uploadSpeed: max(0, uploadSpeed),
+                        isAlive: true  // 活跃连接
                     )
-                    updatedConnections.append(updatedConnection)
+                    
+                    // 检查是否已存在且需要更新
+                    if let existingConnection = self.connectionHistory[connection.id] {
+                        if existingConnection != updatedConnection {
+                            hasChanges = true
+                            self.connectionHistory[connection.id] = updatedConnection
+                        }
+                    } else {
+                        // 新连接
+                        hasChanges = true
+                        self.connectionHistory[connection.id] = updatedConnection
+                    }
                 }
                 
-                // 按开始时间降序排序
-                updatedConnections.sort { $0.start > $1.start }
+                // 更新已断开连接的状态
+                for (id, connection) in self.connectionHistory {
+                    if !currentIds.contains(id) && connection.isAlive {
+                        // 创建已断开的连接副本
+                        let closedConnection = ClashConnection(
+                            id: connection.id,
+                            metadata: connection.metadata,
+                            upload: connection.upload,
+                            download: connection.download,
+                            start: connection.start,
+                            chains: connection.chains,
+                            rule: connection.rule,
+                            rulePayload: connection.rulePayload,
+                            downloadSpeed: 0,
+                            uploadSpeed: 0,
+                            isAlive: false  // 标记为已断开
+                        )
+                        hasChanges = true
+                        self.connectionHistory[id] = closedConnection
+                    }
+                }
                 
-                self.connections = updatedConnections
+                // 只在有变化时更新 UI
+                if hasChanges {
+                    // 转换为数组并按开始时间倒序排序
+                    var sortedConnections = Array(self.connectionHistory.values)
+                    sortedConnections.sort { conn1, conn2 in
+                        // 只按时间排序，不考虑连接状态
+                        return conn1.start > conn2.start
+                    }
+                    
+                    // 只有当超过最大记录数时才清理
+                    if sortedConnections.count > self.maxHistoryCount {
+                        // 保留所有活跃连接
+                        let activeConnections = sortedConnections.filter { $0.isAlive }
+                        
+                        // 计算可以保留的已关闭连接数量
+                        let remainingSlots = self.maxHistoryCount - activeConnections.count
+                        
+                        // 从已关闭的连接中选择最新的
+                        let inactiveConnections = sortedConnections
+                            .filter { !$0.isAlive }
+                            .prefix(remainingSlots)
+                        
+                        // 合并并重新排序
+                        sortedConnections = (activeConnections + Array(inactiveConnections))
+                            .sorted { $0.start > $1.start }
+                        
+                        // 更新历史记录字典
+                        self.connectionHistory = Dictionary(
+                            uniqueKeysWithValues: sortedConnections.map { ($0.id, $0) }
+                        )
+                    }
+                    
+                    self.connections = sortedConnections
+                }
+                
+                // 更新上一次的连接数据
                 self.previousConnections = Dictionary(
-                    uniqueKeysWithValues: updatedConnections.map { ($0.id, $0) }
+                    uniqueKeysWithValues: response.connections.map { ($0.id, $0) }
                 )
             }
         } catch {

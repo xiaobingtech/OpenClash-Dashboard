@@ -5,7 +5,7 @@ struct ConnectionsView: View {
     @StateObject private var viewModel = ConnectionsViewModel()
     @State private var searchText = ""
     @State private var selectedProtocols: Set<String> = ["TCP", "UDP"]
-    @State private var showClosed = false
+    @State private var showClosed = true
     
     // 添加定时器状态
     @State private var timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -17,6 +17,11 @@ struct ConnectionsView: View {
         viewModel.connections.filter { connection in
             // 协议过滤
             guard selectedProtocols.contains(connection.metadata.network.uppercased()) else {
+                return false
+            }
+            
+            // 已断开连接过滤
+            if !showClosed && !connection.isAlive {
                 return false
             }
             
@@ -98,6 +103,15 @@ struct ConnectionsView: View {
                         } else {
                             selectedProtocols.insert("UDP")
                         }
+                    }
+                    
+                    // 已断开连接标签
+                    FilterTag(
+                        title: "已断开",
+                        count: viewModel.connections.filter { !$0.isAlive }.count,
+                        isSelected: showClosed
+                    ) {
+                        showClosed.toggle()
                     }
                 }
                 .padding(.horizontal)
