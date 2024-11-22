@@ -109,9 +109,10 @@ class ConnectionsViewModel: ObservableObject {
         
         DispatchQueue.main.async { [weak self] in
             self?.connectionState = .disconnected
-            self?.connections = []
-            self?.totalUpload = 0
-            self?.totalDownload = 0
+            // 停止监控时也不清空连接列表
+            // self?.connections = []
+            // self?.totalUpload = 0
+            // self?.totalDownload = 0
         }
     }
     
@@ -119,7 +120,7 @@ class ConnectionsViewModel: ObservableObject {
         guard isMonitoring else { return }
         
         guard let url = URL(string: "ws://\(server.url):\(server.port)/connections") else {
-            log("❌ URL 构建失败")
+            log("�� URL 构建失败")
             DispatchQueue.main.async { [weak self] in
                 self?.connectionState = .error("URL 构建失败")
             }
@@ -183,9 +184,10 @@ class ConnectionsViewModel: ObservableObject {
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
                     self.connectionState = .disconnected
-                    self.connections = []
-                    self.totalUpload = 0
-                    self.totalDownload = 0
+                    // 不清空连接列表，保持现有显示
+                    // self.connections = []
+                    // self.totalUpload = 0
+                    // self.totalDownload = 0
                 }
                 
                 // 延迟3秒后重试

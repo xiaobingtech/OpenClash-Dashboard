@@ -116,7 +116,7 @@ struct ConnectionsView: View {
             .listStyle(.plain)
             .background(Color(.systemGroupedBackground))
             .overlay {
-                if filteredConnections.isEmpty {
+                if filteredConnections.isEmpty && viewModel.connectionState == .connected {
                     ContentUnavailableView(
                         label: {
                             Label("没有连接", systemImage: "network.slash")
