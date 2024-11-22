@@ -22,14 +22,15 @@ struct ConnectionRow: View {
                 Spacer()
                 
                 // 关闭按钮
-                Text(connection.id.prefix(3))
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.secondary.opacity(0.1))
-                    .cornerRadius(4)
+                // 关闭按钮
+                Button(action: {
+                    viewModel.closeConnection(connection.id)
+                }) {
+                    Image(systemName: "xmark.circle")
+                        .foregroundColor(.secondary)
+                }
             }
-            .font(.system(size: 13))
+ 
             
             // 第二行：主机信息
             HStack(spacing: 4) {
@@ -88,4 +89,4 @@ struct ConnectionRow: View {
     )
 } 
 
-} 
+
