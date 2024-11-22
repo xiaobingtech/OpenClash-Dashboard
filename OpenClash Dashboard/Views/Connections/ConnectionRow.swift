@@ -4,6 +4,7 @@ import Foundation
 struct ConnectionRow: View {
     let connection: ClashConnection
     let viewModel: ConnectionsViewModel
+    @ObservedObject var tagViewModel: ClientTagViewModel
     
     // 添加格式化速度的辅助方法
     private func formatSpeed(_ bytesPerSecond: Double) -> String {
@@ -39,6 +40,11 @@ struct ConnectionRow: View {
         }
         
         return String(format: "%.1f%@", size, units[unitIndex])
+    }
+    
+    // 修改获取标签的方法
+    private func getClientTag(for ip: String) -> String? {
+        return tagViewModel.tags.first { $0.ip == ip }?.name
     }
     
     var body: some View {
@@ -127,6 +133,16 @@ struct ConnectionRow: View {
                         .foregroundColor(.green)
                         .cornerRadius(4)
                     
+                    if let tagName = getClientTag(for: connection.metadata.sourceIP) {
+                        Text(tagName)
+                            .font(.caption)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.blue.opacity(0.1))
+                            .foregroundColor(.blue)
+                            .cornerRadius(4)
+                    }
+                    
                     Text("\(connection.metadata.sourceIP):\(connection.metadata.sourcePort)")
                         .foregroundColor(.secondary)
                         .font(.caption)
@@ -192,7 +208,8 @@ struct ConnectionRow: View {
 #Preview {
     ConnectionRow(
         connection: .preview(),
-        viewModel: ConnectionsViewModel()
+        viewModel: ConnectionsViewModel(),
+        tagViewModel: ClientTagViewModel()
     )
 } 
 

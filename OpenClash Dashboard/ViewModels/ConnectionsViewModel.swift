@@ -380,7 +380,7 @@ class ConnectionsViewModel: ObservableObject {
                 )
             }
         } catch {
-            log("❌ 解码��误：\(error)")
+            log("❌ 解码误：\(error)")
             DispatchQueue.main.async { [weak self] in
                 self?.connectionState = .error("数据解析错误: \(error.localizedDescription)")
             }
@@ -467,5 +467,18 @@ class ConnectionsViewModel: ObservableObject {
         } else {
             reconnect()
         }
+    }
+    
+    func closeAllConnections() {
+        Task {
+            for connection in connections where connection.isAlive {
+                closeConnection(connection.id)
+                try? await Task.sleep(nanoseconds: 100_000_000) // 100ms 延迟
+            }
+        }
+    }
+    
+    func clearClosedConnections() {
+        connections = connections.filter { $0.isAlive }
     }
 } 
