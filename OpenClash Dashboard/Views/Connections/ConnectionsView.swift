@@ -15,13 +15,25 @@ struct ConnectionsView: View {
     
     private var filteredConnections: [ClashConnection] {
         viewModel.connections.filter { connection in
-            // 协议过滤
-            guard selectedProtocols.contains(connection.metadata.network.uppercased()) else {
-                return false
+            // 如果选择了任何协议，则按协议过滤
+            if !selectedProtocols.isEmpty {
+                guard selectedProtocols.contains(connection.metadata.network.uppercased()) else {
+                    return false
+                }
             }
             
             // 已断开连接过滤
             if !showClosed && !connection.isAlive {
+                return false
+            }
+            
+            // 如果没有选择任何协议，但显示已断开连接，则显示已断开的连接
+            if selectedProtocols.isEmpty && showClosed && !connection.isAlive {
+                return true
+            }
+            
+            // 如果没有选择任何协议且连接是活跃的，则不显示
+            if selectedProtocols.isEmpty && connection.isAlive {
                 return false
             }
             
@@ -118,7 +130,7 @@ struct ConnectionsView: View {
                 .padding(.vertical, 8)
             }
             
-            // 连接列表
+            // 连接列���
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(filteredConnections) { connection in
