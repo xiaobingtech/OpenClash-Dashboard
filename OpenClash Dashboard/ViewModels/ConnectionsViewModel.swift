@@ -151,31 +151,8 @@ class ConnectionsViewModel: ObservableObject {
         connectionsTask = task
         task.resume()
         
-        // 添加ping任务来检测连接状态
-        schedulePing(task)
-        
+        // 开始接收消息
         receiveConnectionsData()
-    }
-    
-    // 添加ping检测
-    private func schedulePing(_ task: URLSessionWebSocketTask) {
-        guard isMonitoring else { return }
-        
-        task.sendPing { [weak self] error in
-            guard let self = self else { return }
-            if let error = error {
-                print("Ping failed: \(error)")
-                DispatchQueue.main.async {
-                    self.connectionState = .disconnected
-                }
-            }
-            
-            // 每5秒ping一次
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-                guard let self = self, self.isMonitoring else { return }
-                self.schedulePing(task)
-            }
-        }
     }
     
     private func receiveConnectionsData() {
