@@ -12,7 +12,7 @@ struct ConnectionRow: View {
         var speed = bytesPerSecond
         var unitIndex = 0
         
-        while speed >= 1024 && unitIndex < units.count - 1 {
+        while speed >= 1000 && unitIndex < units.count - 1 {
             speed /= 1024
             unitIndex += 1
         }
@@ -21,7 +21,13 @@ struct ConnectionRow: View {
             return "0\(units[unitIndex])"
         }
         
-        return String(format: "%.1f%@", speed, units[unitIndex])
+        if speed >= 100 {
+            return String(format: "%.0f%@", min(speed, 999), units[unitIndex])
+        } else if speed >= 10 {
+            return String(format: "%.1f%@", speed, units[unitIndex])
+        } else {
+            return String(format: "%.2f%@", speed, units[unitIndex])
+        }
     }
     
     // 添加格式化字节的辅助方法
@@ -30,7 +36,7 @@ struct ConnectionRow: View {
         var size = Double(bytes)
         var unitIndex = 0
         
-        while size >= 1024 && unitIndex < units.count - 1 {
+        while size >= 1000 && unitIndex < units.count - 1 {
             size /= 1024
             unitIndex += 1
         }
@@ -39,7 +45,13 @@ struct ConnectionRow: View {
             return "0\(units[unitIndex])"
         }
         
-        return String(format: "%.1f%@", size, units[unitIndex])
+        if size >= 100 {
+            return String(format: "%.0f%@", min(size, 999), units[unitIndex])
+        } else if size >= 10 {
+            return String(format: "%.1f%@", size, units[unitIndex])
+        } else {
+            return String(format: "%.2f%@", size, units[unitIndex])
+        }
     }
     
     // 修改获取标签的方法
@@ -47,26 +59,58 @@ struct ConnectionRow: View {
         return tagViewModel.tags.first { $0.ip == ip }?.name
     }
     
-    // 添加一个组合显示流量和速度的视图组件
-    private func TrafficView(bytes: Int, speed: Double, icon: String, color: Color) -> some View {
+    // 修改流量显示组件
+    private func TrafficView(bytes: Int, icon: String, color: Color) -> some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
+                .font(.system(size: 12))
                 .foregroundColor(color)
-                .frame(width: 16, height: 16)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(formatBytes(bytes))
-                    .foregroundColor(color)
-                    .font(.footnote)
-                Text(formatSpeed(speed))
-                    .foregroundColor(color.opacity(0.8))
-                    .font(.system(size: 10))
-            }
+                .frame(width: 16)
+            Text(formatBytes(bytes))
+                .frame(width: 52, alignment: .leading)
+                .foregroundColor(color)
+                .font(.system(.footnote, design: .monospaced))
+                .contentTransition(.numericText())
         }
+        .frame(width: 72)
+    }
+    
+    // 优化速度显示组件
+    private func SpeedView(download: Double, upload: Double) -> some View {
+        HStack(spacing: 12) {
+            // 下载速度
+            HStack(spacing: 2) {
+                Image(systemName: "arrow.down")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.blue)
+                    .frame(width: 12)
+                Text(formatSpeed(download))
+                    .frame(width: 66, alignment: .leading)
+                    .contentTransition(.numericText())
+            }
+            .frame(width: 70)
+            
+            // 上传速度
+            HStack(spacing: 2) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.green)
+                    .frame(width: 12)
+                Text(formatSpeed(upload))
+                    .frame(width: 66, alignment: .leading)
+                    .contentTransition(.numericText())
+            }
+            .frame(width: 70)
+        }
+        .font(.system(.footnote, design: .monospaced))
+        .foregroundColor(.secondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
     }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // 第一行：时间信息和关闭按钮/状态指示器
+            // 第一行：时间信息和关闭按钮
             HStack {
                 HStack(spacing: 6) {
                     Image(systemName: "clock.fill")
@@ -74,39 +118,34 @@ struct ConnectionRow: View {
                         .frame(width: 16, height: 16)
                     Text(connection.formattedStartTime)
                         .foregroundColor(.secondary)
-                    Text("#\(connection.formattedDuration)")
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.1))
-                        .cornerRadius(4)
+                    
+                    // 根据连接状态显示不同的信息
+                    if connection.isAlive {
+                        SpeedView(download: connection.downloadSpeed, upload: connection.uploadSpeed)
+                    } else {
+                        Text(connection.formattedDuration)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color(.systemGray6))
+                            )
+                    }
                 }
                 .font(.footnote)
                 
                 Spacer()
                 
-                // 根据连接状态显示不同的按钮/指示器
+                // 只在连接活跃时显示关闭按钮
                 if connection.isAlive {
-                    // 活跃连接显示关闭按钮
                     Button(action: {
                         viewModel.closeConnection(connection.id)
                     }) {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.secondary.opacity(0.5))
                             .frame(width: 20, height: 20)
                     }
-                } else {
-                    Text("已断开")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.secondary.opacity(0.1))
-                    .cornerRadius(4)
-                    // 已关闭连接显示状态指示器
-                    // Image(systemName: "circle.slash")
-                    //     .foregroundColor(.secondary)
-                    //     .frame(width: 20, height: 20)
                 }
             }
             
@@ -159,34 +198,22 @@ struct ConnectionRow: View {
                 
                 Spacer()
                 
-                // 使用新的流量显示组件
-                HStack(spacing: 12) {
+                // 使用修改后的流量显示组件
+                HStack(spacing: 16) {
                     TrafficView(
                         bytes: connection.download,
-                        speed: connection.downloadSpeed,
                         icon: "arrow.down.circle.fill",
                         color: .blue
                     )
-                    
                     TrafficView(
                         bytes: connection.upload,
-                        speed: connection.uploadSpeed,
                         icon: "arrow.up.circle.fill",
                         color: .green
                     )
                 }
+                .animation(.smooth, value: connection.download)
+                .animation(.smooth, value: connection.upload)
             }
-            
-            // 添加状态指示器
-            // if !connection.isAlive {
-            //     Text("已断开")
-            //         .font(.caption)
-            //         .foregroundColor(.secondary)
-            //         .padding(.horizontal, 6)
-            //         .padding(.vertical, 2)
-            //         .background(Color.secondary.opacity(0.1))
-            //         .cornerRadius(4)
-            // }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -195,7 +222,8 @@ struct ConnectionRow: View {
         .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
-        .opacity(connection.isAlive ? 1 : 0.6) // 已断开连接显示为半透明
+        .opacity(connection.isAlive ? 1 : 0.6)
+        .animation(.easeInOut(duration: 0.2), value: connection.isAlive) // 添加状态变化动画
     }
 }
 
