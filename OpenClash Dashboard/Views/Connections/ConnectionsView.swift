@@ -6,7 +6,9 @@ struct ConnectionsView: View {
     @StateObject private var tagViewModel = ClientTagViewModel()
     @State private var searchText = ""
     @State private var selectedProtocols: Set<String> = ["TCP", "UDP"]
-    @State private var showClosed = true
+    @State private var connectionFilter: ConnectionFilter = .active
+    @State private var showMenu = false
+    @State private var isDetectingLongPress = false
     @State private var showClientTagSheet = false
     
     // 添加定时器状态
@@ -15,40 +17,55 @@ struct ConnectionsView: View {
     // 添加连接状态属性
     @State private var isConnecting = false
     
+    // 添加枚举类型
+    private enum ConnectionFilter {
+        case active   // 正活跃
+        case closed   // 已断开
+        
+        var title: String {
+            switch self {
+            case .active: return "正活跃"
+            case .closed: return "已断开"
+            }
+        }
+    }
+    
+    // 添加计算属性来获取不同类型的连接数量
+    private var activeConnectionsCount: Int {
+        viewModel.connections.filter { $0.isAlive }.count
+    }
+    
+    private var closedConnectionsCount: Int {
+        viewModel.connections.filter { !$0.isAlive }.count
+    }
+    
+    private var tcpConnectionsCount: Int {
+        viewModel.connections.filter { connection in
+            let isMatchingState = connectionFilter == .active ? connection.isAlive : !connection.isAlive
+            return isMatchingState && connection.metadata.network.uppercased() == "TCP"
+        }.count
+    }
+    
+    private var udpConnectionsCount: Int {
+        viewModel.connections.filter { connection in
+            let isMatchingState = connectionFilter == .active ? connection.isAlive : !connection.isAlive
+            return isMatchingState && connection.metadata.network.uppercased() == "UDP"
+        }.count
+    }
+    
     private var filteredConnections: [ClashConnection] {
         viewModel.connections.filter { connection in
+            // 根据连接状态过滤
+            switch connectionFilter {
+            case .active:
+                guard connection.isAlive else { return false }
+            case .closed:
+                guard !connection.isAlive else { return false }
+            }
+            
             // 如果选择了任何协议，则按协议过滤
             if !selectedProtocols.isEmpty {
                 guard selectedProtocols.contains(connection.metadata.network.uppercased()) else {
-                    return false
-                }
-            }
-            
-            // 已断开连接过滤
-            if !showClosed && !connection.isAlive {
-                return false
-            }
-            
-            // 如果没有选择任何协议，但显示已断开连接，则显示已开的连接
-            if selectedProtocols.isEmpty && showClosed && !connection.isAlive {
-                return true
-            }
-            
-            // 如果没有选择任何协议且连接是活跃的，则不显示
-            if selectedProtocols.isEmpty && connection.isAlive {
-                return false
-            }
-            
-            // 搜索过滤
-            if !searchText.isEmpty {
-                let searchContent = [
-                    connection.metadata.host,
-                    connection.metadata.destinationIP,
-                    connection.metadata.sourceIP,
-                    connection.chains.joined(separator: " ")
-                ].joined(separator: " ").lowercased()
-                
-                guard searchContent.contains(searchText.lowercased()) else {
                     return false
                 }
             }
@@ -94,39 +111,29 @@ struct ConnectionsView: View {
                 // 过滤标签栏
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
-                        // TCP 标签
-                        FilterTag(
-                            title: "TCP",
-                            count: viewModel.connections.filter { $0.metadata.network.uppercased() == "TCP" }.count,
-                            isSelected: selectedProtocols.contains("TCP")
-                        ) {
-                            if selectedProtocols.contains("TCP") {
-                                selectedProtocols.remove("TCP")
-                            } else {
-                                selectedProtocols.insert("TCP")
-                            }
+                        // 连接状态切换器
+                        Picker("连接状态", selection: $connectionFilter) {
+                            Text("正活跃 (\(activeConnectionsCount))")
+                                .tag(ConnectionFilter.active)
+                            Text("已断开 (\(closedConnectionsCount))")
+                                .tag(ConnectionFilter.closed)
                         }
+                        .pickerStyle(.segmented)
+                        .frame(width: 160)  // 增加宽度以适应数字
                         
-                        // UDP 标签
-                        FilterTag(
-                            title: "UDP",
-                            count: viewModel.connections.filter { $0.metadata.network.uppercased() == "UDP" }.count,
-                            isSelected: selectedProtocols.contains("UDP")
-                        ) {
-                            if selectedProtocols.contains("UDP") {
-                                selectedProtocols.remove("UDP")
-                            } else {
-                                selectedProtocols.insert("UDP")
-                            }
-                        }
-                        
-                        // 已断开接标签
-                        FilterTag(
-                            title: "已断开",
-                            count: viewModel.connections.filter { !$0.isAlive }.count,
-                            isSelected: showClosed
-                        ) {
-                            showClosed.toggle()
+                        // 协议过滤器
+                        ForEach(["TCP", "UDP"], id: \.self) { protocolType in
+                            FilterChip(
+                                title: "\(protocolType) (\(protocolType == "TCP" ? tcpConnectionsCount : udpConnectionsCount))",
+                                isSelected: selectedProtocols.contains(protocolType),
+                                action: {
+                                    if selectedProtocols.contains(protocolType) {
+                                        selectedProtocols.remove(protocolType)
+                                    } else {
+                                        selectedProtocols.insert(protocolType)
+                                    }
+                                }
+                            )
                         }
                     }
                     .padding(.horizontal)
@@ -195,34 +202,22 @@ struct ConnectionsView: View {
     }
 }
 
-// 过滤标签组件
-struct FilterTag: View {
+// 过滤器标签组件
+struct FilterChip: View {
     let title: String
-    let count: Int
     let isSelected: Bool
     let action: () -> Void
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
-                Text(title)
-                Text("\(count)")
-                    .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        isSelected ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.2)
-                    )
-                    .cornerRadius(8)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                isSelected ? Color.accentColor.opacity(0.1) : Color.clear
-            )
-            .cornerRadius(8)
+            Text(title)
+                .font(.footnote)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(isSelected ? Color.accentColor : Color.secondary.opacity(0.1))
+                .foregroundColor(isSelected ? .white : .secondary)
+                .cornerRadius(16)
         }
-        .buttonStyle(.plain)
     }
 }
 

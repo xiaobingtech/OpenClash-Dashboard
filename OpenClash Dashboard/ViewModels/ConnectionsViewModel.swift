@@ -402,14 +402,45 @@ class ConnectionsViewModel: ObservableObject {
         
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
+        
+        // 添加所有必要的请求头
+        request.setValue("*/*", forHTTPHeaderField: "Accept")
+        request.setValue("en-US,en;q=0.9,zh-CN;q=0.8,zh-TW;q=0.7,zh;q=0.6", forHTTPHeaderField: "Accept-Language")
         request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue("keep-alive", forHTTPHeaderField: "Connection")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("1", forHTTPHeaderField: "DNT")
+        request.setValue("http://\(server.url):\(server.port)", forHTTPHeaderField: "Origin")
+        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
+        request.setValue("http://\(server.url):\(server.port)/ui/yacd/?hostname=\(server.url)&port=\(server.port)&secret=\(server.secret)", forHTTPHeaderField: "Referer")
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
         
         Task {
             do {
                 let (_, response) = try await URLSession.shared.data(for: request)
                 if let httpResponse = response as? HTTPURLResponse,
                    httpResponse.statusCode == 204 {
-                    await refresh()
+                    // 不再调用 refresh()，而是直接在本地更新连接状态
+                    await MainActor.run {
+                        if let index = connections.firstIndex(where: { $0.id == id }) {
+                            var updatedConnection = connections[index]
+                            // 创建一个新的连接对象，将 isAlive 设置为 false
+                            connections[index] = ClashConnection(
+                                id: updatedConnection.id,
+                                metadata: updatedConnection.metadata,
+                                upload: updatedConnection.upload,
+                                download: updatedConnection.download,
+                                start: updatedConnection.start,
+                                chains: updatedConnection.chains,
+                                rule: updatedConnection.rule,
+                                rulePayload: updatedConnection.rulePayload,
+                                downloadSpeed: 0,
+                                uploadSpeed: 0,
+                                isAlive: false
+                            )
+                        }
+                    }
                 }
             } catch {
                 print("Error closing connection: \(error)")
@@ -469,16 +500,113 @@ class ConnectionsViewModel: ObservableObject {
         }
     }
     
-    func closeAllConnections() {
-        Task {
-            for connection in connections where connection.isAlive {
-                closeConnection(connection.id)
-                try? await Task.sleep(nanoseconds: 100_000_000) // 100ms 延迟
+    // 简化清理方法，完全移除已关闭的连接
+    func clearClosedConnections() {
+        print("\n🧹 开始清理已断开连接")
+        print("当前连接总数:", connections.count)
+        print("历史连接数量:", previousConnections.count)
+        
+        // 获取要清理的连接ID
+        let closedConnectionIds = connections.filter { !$0.isAlive }.map { $0.id }
+        
+        // 从当前连接列表中移除已断开的连接
+        connections.removeAll { !$0.isAlive }
+        
+        // 从历史记录中也移除这些连接
+        for id in closedConnectionIds {
+            previousConnections.removeValue(forKey: id)
+        }
+        
+        print("清理后连接数量:", connections.count)
+        print("清理后历史连接数量:", previousConnections.count)
+        print("✅ 清理完成")
+        print("-------------------\n")
+    }
+    
+    private func handleConnectionsUpdate(_ response: ConnectionsResponse) {
+        Task { @MainActor in
+            totalUpload = response.uploadTotal
+            totalDownload = response.downloadTotal
+            
+            var updatedConnections: [ClashConnection] = []
+            
+            for connection in response.connections {
+                if let previousConnection = previousConnections[connection.id] {
+                    // 只有活跃的连接才会被添加到更新列表中
+                    if connection.isAlive {
+                        let updatedConnection = ClashConnection(
+                            id: connection.id,
+                            metadata: connection.metadata,
+                            upload: connection.upload,
+                            download: connection.download,
+                            start: connection.start,
+                            chains: connection.chains,
+                            rule: connection.rule,
+                            rulePayload: connection.rulePayload,
+                            downloadSpeed: Double(connection.download - previousConnection.download),
+                            uploadSpeed: Double(connection.upload - previousConnection.upload),
+                            isAlive: connection.isAlive
+                        )
+                        updatedConnections.append(updatedConnection)
+                    }
+                } else if connection.isAlive {
+                    // 新的活跃连接
+                    let newConnection = ClashConnection(
+                        id: connection.id,
+                        metadata: connection.metadata,
+                        upload: connection.upload,
+                        download: connection.download,
+                        start: connection.start,
+                        chains: connection.chains,
+                        rule: connection.rule,
+                        rulePayload: connection.rulePayload,
+                        downloadSpeed: 0,
+                        uploadSpeed: 0,
+                        isAlive: connection.isAlive
+                    )
+                    updatedConnections.append(newConnection)
+                }
+                
+                // 只保存活跃连接的历史记录
+                if connection.isAlive {
+                    previousConnections[connection.id] = connection
+                }
             }
+            
+            connections = updatedConnections
         }
     }
     
-    func clearClosedConnections() {
-        connections = connections.filter { $0.isAlive }
+    func closeAllConnections() {
+        guard let server = server else { return }
+        
+        let urlString = "http://\(server.url):\(server.port)/connections"
+        guard let url = URL(string: urlString) else { return }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        
+        // 添加必要的请求头
+        request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("http://\(server.url):\(server.port)/ui/yacd/?hostname=\(server.url)&port=\(server.port)&secret=\(server.secret)", forHTTPHeaderField: "Referer")
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        request.setValue("1", forHTTPHeaderField: "DNT")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        Task {
+            do {
+                let (_, response) = try await URLSession.shared.data(for: request)
+                if let httpResponse = response as? HTTPURLResponse,
+                   httpResponse.statusCode == 204 {
+                    await MainActor.run {
+                        // 清空所有连接相关的数据
+                        connections.removeAll()
+                        previousConnections.removeAll() // 同时清空历史记录
+                    }
+                }
+            } catch {
+                print("Error closing all connections: \(error)")
+            }
+        }
     }
 } 

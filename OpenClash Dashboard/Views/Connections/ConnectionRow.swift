@@ -47,6 +47,23 @@ struct ConnectionRow: View {
         return tagViewModel.tags.first { $0.ip == ip }?.name
     }
     
+    // 添加一个组合显示流量和速度的视图组件
+    private func TrafficView(bytes: Int, speed: Double, icon: String, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .foregroundColor(color)
+                .frame(width: 16, height: 16)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(formatBytes(bytes))
+                    .foregroundColor(color)
+                    .font(.footnote)
+                Text(formatSpeed(speed))
+                    .foregroundColor(color.opacity(0.8))
+                    .font(.system(size: 10))
+            }
+        }
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // 第一行：时间信息和关闭按钮/状态指示器
@@ -117,14 +134,6 @@ struct ConnectionRow: View {
             HStack {
                 // 网络类型和源IP信息
                 HStack(spacing: 6) {
-//                    Text(connection.metadata.type.uppercased())
-//                        .font(.caption)
-//                        .padding(.horizontal, 6)
-//                        .padding(.vertical, 2)
-//                        .background(Color.blue.opacity(0.1))
-//                        .foregroundColor(.blue)
-//                        .cornerRadius(4)
-                    
                     Text(connection.metadata.network.uppercased())
                         .font(.caption)
                         .padding(.horizontal, 6)
@@ -141,46 +150,31 @@ struct ConnectionRow: View {
                             .background(Color.blue.opacity(0.1))
                             .foregroundColor(.blue)
                             .cornerRadius(4)
+                    } else {
+                        Text("\(connection.metadata.sourceIP):\(connection.metadata.sourcePort)")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
                     }
-                    
-                    Text("\(connection.metadata.sourceIP):\(connection.metadata.sourcePort)")
-                        .foregroundColor(.secondary)
-                        .font(.caption)
                 }
                 
                 Spacer()
                 
-                // 流量和速度信息
-                HStack(spacing: 8) {
-                    // 下载信息
-                    VStack(alignment: .trailing, spacing: 2) {
-                        HStack(spacing: 2) {
-                            Image(systemName: "arrow.down.circle.fill")
-                                .foregroundColor(.blue)
-                                .frame(width: 16, height: 16)
-                            Text(formatBytes(connection.download))
-                                .foregroundColor(.blue)
-                        }
-                        Text(formatSpeed(connection.downloadSpeed))
-                            .foregroundColor(.blue.opacity(0.8))
-                            .font(.system(size: 10))
-                    }
+                // 使用新的流量显示组件
+                HStack(spacing: 12) {
+                    TrafficView(
+                        bytes: connection.download,
+                        speed: connection.downloadSpeed,
+                        icon: "arrow.down.circle.fill",
+                        color: .blue
+                    )
                     
-                    // 上传信息
-                    VStack(alignment: .trailing, spacing: 2) {
-                        HStack(spacing: 2) {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .foregroundColor(.green)
-                                .frame(width: 16, height: 16)
-                            Text(formatBytes(connection.upload))
-                                .foregroundColor(.green)
-                        }
-                        Text(formatSpeed(connection.uploadSpeed))
-                            .foregroundColor(.green.opacity(0.8))
-                            .font(.system(size: 10))
-                    }
+                    TrafficView(
+                        bytes: connection.upload,
+                        speed: connection.uploadSpeed,
+                        icon: "arrow.up.circle.fill",
+                        color: .green
+                    )
                 }
-                .font(.footnote)
             }
             
             // 添加状态指示器
