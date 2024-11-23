@@ -67,12 +67,12 @@ struct ConnectionRow: View {
                 .foregroundColor(color)
                 .frame(width: 16)
             Text(formatBytes(bytes))
-                .frame(width: 52, alignment: .leading)
+                .frame(width: 58, alignment: .leading)
                 .foregroundColor(color)
                 .font(.system(.footnote, design: .monospaced))
-                .contentTransition(.numericText())
+                .monospacedDigit()
         }
-        .frame(width: 55)
+        .frame(width: 78)
     }
     
     // 优化速度显示组件
@@ -86,7 +86,7 @@ struct ConnectionRow: View {
                     .frame(width: 12)
                 Text(formatSpeed(download))
                     .frame(width: 66, alignment: .leading)
-                    .contentTransition(.numericText())
+                    .monospacedDigit()
             }
             .frame(width: 70)
             
@@ -98,7 +98,7 @@ struct ConnectionRow: View {
                     .frame(width: 12)
                 Text(formatSpeed(upload))
                     .frame(width: 66, alignment: .leading)
-                    .contentTransition(.numericText())
+                    .monospacedDigit()
             }
             .frame(width: 70)
         }
@@ -211,8 +211,6 @@ struct ConnectionRow: View {
                         color: .green
                     )
                 }
-                .animation(.smooth, value: connection.download)
-                .animation(.smooth, value: connection.upload)
             }
         }
         .padding(.horizontal, 16)
@@ -223,7 +221,11 @@ struct ConnectionRow: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
         .opacity(connection.isAlive ? 1 : 0.6)
-        .animation(.easeInOut(duration: 0.2), value: connection.isAlive) // 添加状态变化动画
+        // 使用字符串作为动画的值，包含所有需要监视的状态
+        .animation(
+            .smooth(duration: 0.2),
+            value: "\(connection.isAlive)_\(connection.download)_\(connection.upload)_\(connection.downloadSpeed)_\(connection.uploadSpeed)"
+        )
     }
 }
 

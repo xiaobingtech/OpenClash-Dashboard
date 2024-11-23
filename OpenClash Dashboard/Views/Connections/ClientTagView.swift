@@ -52,12 +52,14 @@ struct ClientTagView: View {
                     ForEach(uniqueActiveConnections) { connection in
                         let ip = connection.metadata.sourceIP
                         HStack {
-                            VStack(alignment: .leading) {
+                            VStack(alignment: .leading, spacing: 4) {
                                 Text(ip)
                                     .font(.headline)
-                                Text(connection.metadata.process)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                if !connection.metadata.process.isEmpty {
+                                    Text(connection.metadata.process)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                             }
                             
                             Spacer()
@@ -67,8 +69,12 @@ struct ClientTagView: View {
                             }) {
                                 Image(systemName: "plus.circle.fill")
                                     .foregroundColor(.accentColor)
+                                    .font(.system(size: 22))
                             }
+                            .buttonStyle(PlainButtonStyle())
                         }
+                        .contentShape(Rectangle())
+                        .frame(height: 44)
                     }
                 } header: {
                     Text("活跃连接")
