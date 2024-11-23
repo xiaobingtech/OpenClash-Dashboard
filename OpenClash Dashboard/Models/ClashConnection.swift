@@ -89,7 +89,7 @@ struct ClashConnection: Identifiable, Codable, Equatable {
             metadata: ConnectionMetadata(
                 network: "tcp",
                 type: "HTTPS",
-                sourceIP: "192.168.1.1",
+                sourceIP: "192.168.167.255",
                 destinationIP: "142.250.188.14",
                 sourcePort: "48078",
                 destinationPort: "443",
@@ -112,13 +112,13 @@ struct ClashConnection: Identifiable, Codable, Equatable {
                 dscp: 0,
                 sniffHost: ""
             ),
-            upload: 304,
-            download: 363946,
+            upload: 993946000,
+            download: 993946000,
             start: Date().addingTimeInterval(-3600),
             chains: ["🇭🇰 香港 IEPL [01] [Air]", "Auto - UrlTest", "Proxy", "YouTube"],
             rule: "RuleSet",
             rulePayload: "YouTube",
-            downloadSpeed: 1024.0,
+            downloadSpeed: 102400000.0,
             uploadSpeed: 512.0,
             isAlive: true
         )

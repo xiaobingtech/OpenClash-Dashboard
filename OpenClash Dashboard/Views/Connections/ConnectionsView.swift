@@ -407,7 +407,7 @@ struct ConnectionsView: View {
                                 if !searchText.isEmpty {
                                     Text("没有找到匹配的连接")
                                 } else {
-                                    Text("当前没有活动的连接")
+                                    Text("当前没有可展示的连接")
                                 }
                             }
                         )

@@ -72,7 +72,7 @@ struct ConnectionRow: View {
                 .font(.system(.footnote, design: .monospaced))
                 .contentTransition(.numericText())
         }
-        .frame(width: 72)
+        .frame(width: 55)
     }
     
     // 优化速度显示组件
