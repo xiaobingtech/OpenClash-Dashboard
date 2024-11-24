@@ -8,13 +8,26 @@ class RulesViewModel: ObservableObject {
     
     let server: ClashServer
     
-    struct Rule: Codable, Identifiable {
+    struct Rule: Codable, Identifiable, Hashable {
         let type: String
         let payload: String
         let proxy: String
         let size: Int
         
         var id: String { "\(type)-\(payload)" }
+        
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(id)
+        }
+        
+        static func == (lhs: Rule, rhs: Rule) -> Bool {
+            lhs.id == rhs.id
+        }
+        
+        var sectionKey: String {
+            let firstChar = String(payload.prefix(1)).uppercased()
+            return firstChar.first?.isLetter == true ? firstChar : "#"
+        }
     }
     
     struct RuleProvider: Codable, Identifiable {
@@ -96,6 +109,35 @@ class RulesViewModel: ObservableObject {
         let request = try server.makeRequest(url: url)
         let (data, _) = try await URLSession.shared.data(for: request)
         return try JSONDecoder().decode(ProvidersResponse.self, from: data)
+    }
+    
+    @MainActor
+    func refreshProvider(_ name: String) async {
+        do {
+            // 构建刷新 URL
+            guard let baseURL = server.baseURL else {
+                throw URLError(.badURL)
+            }
+            
+            let url = baseURL
+                .appendingPathComponent("providers")
+                .appendingPathComponent("rules")
+                .appendingPathComponent(name)
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "PUT"
+            request.setValue(server.secret, forHTTPHeaderField: "Authorization")
+            
+            let (_, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse,
+               httpResponse.statusCode == 204 {
+                // 刷新成功后重新获取数据
+                await fetchData()
+            }
+        } catch {
+            print("Error refreshing provider: \(error)")
+        }
     }
 }
 
