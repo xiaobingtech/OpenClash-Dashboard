@@ -72,10 +72,22 @@ struct ServerDetailView: View {
 struct SpeedChartView: View {
     let speedHistory: [SpeedRecord]
     
+    // 预设的速度刻度值（单位：字节/秒）
+    private let presetSpeeds: [Double] = [
+        1_000,      // 1 KB/s
+        10_000,     // 10 KB/s
+        100_000,    // 100 KB/s
+        1_000_000,  // 1 MB/s
+        10_000_000, // 10 MB/s
+    ]
+    
     private var maxValue: Double {
         let maxUpload = speedHistory.map { $0.upload }.max() ?? 0
         let maxDownload = speedHistory.map { $0.download }.max() ?? 0
-        return max(maxUpload, maxDownload) * 1.1
+        let currentMax = max(maxUpload, maxDownload)
+        
+        // 找到合适的预设最大值
+        return presetSpeeds.first { $0 >= currentMax } ?? presetSpeeds.last ?? 10_000_000
     }
     
     private func formatSpeed(_ speed: Double) -> String {
@@ -97,6 +109,15 @@ struct SpeedChartView: View {
             }
             
             Chart {
+                // 添加预设的网格线和标签
+                ForEach(Array(stride(from: 0, to: maxValue, by: maxValue/4)), id: \.self) { value in
+                    RuleMark(
+                        y: .value("Speed", value)
+                    )
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+                    .foregroundStyle(.gray.opacity(0.1))
+                }
+                
                 // 上传数据
                 ForEach(speedHistory) { record in
                     LineMark(
@@ -104,7 +125,7 @@ struct SpeedChartView: View {
                         y: .value("Speed", record.upload),
                         series: .value("Type", "上传")
                     )
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(.green)
                     .interpolationMethod(.monotone)
                 }
                 
@@ -115,7 +136,7 @@ struct SpeedChartView: View {
                         yEnd: .value("Speed", record.upload),
                         series: .value("Type", "上传")
                     )
-                    .foregroundStyle(.blue.opacity(0.1))
+                    .foregroundStyle(.green.opacity(0.1))
                     .interpolationMethod(.monotone)
                 }
                 
@@ -126,7 +147,7 @@ struct SpeedChartView: View {
                         y: .value("Speed", record.download),
                         series: .value("Type", "下载")
                     )
-                    .foregroundStyle(.green)
+                    .foregroundStyle(.blue)
                     .interpolationMethod(.monotone)
                 }
                 
@@ -137,16 +158,20 @@ struct SpeedChartView: View {
                         yEnd: .value("Speed", record.download),
                         series: .value("Type", "下载")
                     )
-                    .foregroundStyle(.green.opacity(0.1))
+                    .foregroundStyle(.blue.opacity(0.1))
                     .interpolationMethod(.monotone)
                 }
             }
             .frame(height: 200)
             .chartYAxis {
-                AxisMarks(position: .leading) { value in
+                AxisMarks(preset: .extended, position: .leading) { value in
                     if let speed = value.as(Double.self) {
-                        AxisValueLabel {
+                        AxisGridLine()
+                        AxisValueLabel(horizontalSpacing: 0) {
                             Text(formatSpeed(speed))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.leading, 4)
                         }
                     }
                 }
@@ -158,9 +183,9 @@ struct SpeedChartView: View {
             
             // 图例
             HStack {
-                Label("上传", systemImage: "circle.fill")
-                    .foregroundColor(.blue)
                 Label("下载", systemImage: "circle.fill")
+                    .foregroundColor(.blue)
+                Label("上传", systemImage: "circle.fill")
                     .foregroundColor(.green)
             }
             .font(.caption)
@@ -176,22 +201,20 @@ struct OverviewTab: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                // 顶部安全区域占位符
                 Color.clear
-                    .frame(height: 16)
-                
+                    .frame(height: 8)
                 // 速度卡片
                 HStack(spacing: 16) {
                     StatusCard(
-                        title: "上传",
-                        value: monitor.uploadSpeed,
-                        icon: "arrow.up.circle.fill",
+                        title: "下载",
+                        value: monitor.downloadSpeed,
+                        icon: "arrow.down.circle",
                         color: .blue
                     )
                     StatusCard(
-                        title: "下载",
-                        value: monitor.downloadSpeed,
-                        icon: "arrow.down.circle.fill",
+                        title: "上传",
+                        value: monitor.uploadSpeed,
+                        icon: "arrow.up.circle",
                         color: .green
                     )
                 }
@@ -199,15 +222,15 @@ struct OverviewTab: View {
                 // 总流量卡片
                 HStack(spacing: 16) {
                     StatusCard(
-                        title: "上传量",
+                        title: "下载总量",
                         value: monitor.totalUpload,
-                        icon: "arrow.up.circle",
+                        icon: "arrow.down.circle.fill",
                         color: .blue
                     )
                     StatusCard(
-                        title: "下载总量",
+                        title: "上传总量",
                         value: monitor.totalDownload,
-                        icon: "arrow.down.circle",
+                        icon: "arrow.up.circle.fill",
                         color: .green
                     )
                 }
@@ -256,7 +279,8 @@ struct OverviewTab: View {
                     }
                 }
             }
-            .padding()
+            .padding(.horizontal)
+            .padding(.bottom)
         }
         .background(Color(.systemGroupedBackground))
         .onAppear { monitor.startMonitoring(server: server) }
