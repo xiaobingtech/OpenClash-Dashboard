@@ -407,34 +407,34 @@ struct ChartCard<Content: View>: View {
 //     }
 // }
 
-struct RulesView: View {
-    let server: ClashServer
-    @StateObject private var viewModel = RulesViewModel()
+// struct RulesView: View {
+//     let server: ClashServer
+//     @StateObject private var viewModel = RulesViewModel()
     
-    var body: some View {
-        List {
-            ForEach(0..<20) { index in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("DOMAIN-SUFFIX")
-                        .font(.headline)
-                    Text("example\(index).com")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    Text("Proxy")
-                        .font(.caption)
-                        .foregroundColor(.blue)
-                }
-                .padding(.vertical, 4)
-            }
-        }
-        .searchable(text: .constant(""))
-        .overlay {
-            if true { // 替换为实际的加载状态
-                ProgressView()
-            }
-        }
-    }
-}
+//     var body: some View {
+//         List {
+//             ForEach(0..<20) { index in
+//                 VStack(alignment: .leading, spacing: 4) {
+//                     Text("DOMAIN-SUFFIX")
+//                         .font(.headline)
+//                     Text("example\(index).com")
+//                         .font(.subheadline)
+//                         .foregroundColor(.secondary)
+//                     Text("Proxy")
+//                         .font(.caption)
+//                         .foregroundColor(.blue)
+//                 }
+//                 .padding(.vertical, 4)
+//             }
+//         }
+//         .searchable(text: .constant(""))
+//         .overlay {
+//             if true { // 替换为实际的加载状态
+//                 ProgressView()
+//             }
+//         }
+//     }
+// }
 
 struct SettingsView: View {
     let server: ClashServer
