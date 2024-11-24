@@ -7,14 +7,16 @@ struct ClashServer: Identifiable, Codable {
     var port: String
     var secret: String
     var status: ServerStatus
+    var version: String?
     
-    init(id: UUID = UUID(), name: String = "", url: String = "", port: String = "", secret: String = "", status: ServerStatus = .unknown) {
+    init(id: UUID = UUID(), name: String = "", url: String = "", port: String = "", secret: String = "", status: ServerStatus = .unknown, version: String? = nil) {
         self.id = id
         self.name = name
         self.url = url
         self.port = port
         self.secret = secret
         self.status = status
+        self.version = version
     }
     
     var displayName: String {

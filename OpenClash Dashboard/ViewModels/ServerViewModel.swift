@@ -46,6 +46,11 @@ class ServerViewModel: ObservableObject {
         servers.removeAll { $0.id == server.id }
     }
     
+    struct VersionResponse: Codable {
+        let meta: Bool
+        let version: String
+    }
+    
     func checkServerStatus(_ server: ClashServer) async {
         guard let serverIndex = servers.firstIndex(where: { $0.id == server.id }) else { return }
         
@@ -61,7 +66,7 @@ class ServerViewModel: ObservableObject {
         }
         
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
                 servers[serverIndex].status = .error
                 return
@@ -69,7 +74,10 @@ class ServerViewModel: ObservableObject {
             
             switch httpResponse.statusCode {
             case 200:
-                servers[serverIndex].status = .ok
+                if let versionInfo = try? JSONDecoder().decode(VersionResponse.self, from: data) {
+                    servers[serverIndex].status = .ok
+                    servers[serverIndex].version = versionInfo.version
+                }
             case 401:
                 servers[serverIndex].status = .unauthorized
             default:
