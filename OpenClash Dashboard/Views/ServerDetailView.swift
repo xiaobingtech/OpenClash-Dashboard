@@ -488,6 +488,13 @@ struct MoreView: View {
             } label: {
                 Label("日志", systemImage: "doc.text")
             }
+            
+            // 添加域名查询工具
+            NavigationLink {
+                DNSQueryView(server: server)
+            } label: {
+                Label("解析", systemImage: "magnifyingglass")
+            }
         }
         .navigationBarTitleDisplayMode(.inline)
     }
