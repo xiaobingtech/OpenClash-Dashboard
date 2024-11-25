@@ -493,37 +493,37 @@ struct MoreView: View {
     }
 }
 
-struct SettingsView: View {
-    let server: ClashServer
-    @StateObject private var viewModel = SettingsViewModel()
+// struct SettingsView: View {
+//     let server: ClashServer
+//     @StateObject private var viewModel = SettingsViewModel()
     
-    var body: some View {
-        Form {
-            Section("常规") {
-                Toggle("允许局域网", isOn: .constant(true))
-                Toggle("IPv6", isOn: .constant(false))
-            }
+//     var body: some View {
+//         Form {
+//             Section("常规") {
+//                 Toggle("允许局域网", isOn: .constant(true))
+//                 Toggle("IPv6", isOn: .constant(false))
+//             }
             
-            Section("DNS") {
-                Toggle("启用", isOn: .constant(true))
-                Toggle("IPv6", isOn: .constant(false))
-                Toggle("使用系统DNS", isOn: .constant(true))
-            }
+//             Section("DNS") {
+//                 Toggle("启用", isOn: .constant(true))
+//                 Toggle("IPv6", isOn: .constant(false))
+//                 Toggle("使用系统DNS", isOn: .constant(true))
+//             }
             
-            Section("TUN") {
-                Toggle("启用", isOn: .constant(false))
-                Toggle("自动路由", isOn: .constant(true))
-                Toggle("DNS劫持", isOn: .constant(true))
-            }
+//             Section("TUN") {
+//                 Toggle("启用", isOn: .constant(false))
+//                 Toggle("自动路由", isOn: .constant(true))
+//                 Toggle("DNS劫持", isOn: .constant(true))
+//             }
             
-            Section("实验性功能") {
-                Toggle("TCP并发", isOn: .constant(false))
-                Toggle("UDP并发", isOn: .constant(false))
-            }
-        }
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
+//             Section("实验性功能") {
+//                 Toggle("TCP并发", isOn: .constant(false))
+//                 Toggle("UDP并发", isOn: .constant(false))
+//             }
+//         }
+//         .navigationBarTitleDisplayMode(.inline)
+//     }
+// }
 
 // 辅助视图组件
 struct ProxyGroupRow: View {
