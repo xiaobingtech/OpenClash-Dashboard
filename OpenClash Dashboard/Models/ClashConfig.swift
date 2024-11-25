@@ -3,6 +3,7 @@ struct ClashConfig: Codable {
     let socksPort: Int
     let redirPort: Int
     let mixedPort: Int
+    let tproxyPort: Int
     let mode: String
     let logLevel: String
     let allowLan: Bool
@@ -35,6 +36,7 @@ struct ClashConfig: Codable {
         case socksPort = "socks-port"
         case redirPort = "redir-port"
         case mixedPort = "mixed-port"
+        case tproxyPort = "tproxy-port"
         case mode
         case logLevel = "log-level"
         case allowLan = "allow-lan"

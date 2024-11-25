@@ -59,37 +59,110 @@ class SettingsViewModel: ObservableObject {
         
         URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
             if let httpResponse = response as? HTTPURLResponse,
-               httpResponse.statusCode == 200 {
+               (200...299).contains(httpResponse.statusCode) {
                 // 更新成功
                 print("设置更新成功：\(path) = \(value)")
-            } else {
-                // 处理错误
+            } else if let error = error {
+                // 只在真正发生错误时打印
                 print("设置更新失败：\(path) = \(value)")
-                if let error = error {
-                    print("错误：\(error.localizedDescription)")
-                }
+                print("错误：\(error.localizedDescription)")
             }
         }.resume()
     }
     
     // MARK: - Actions
-    func reloadConfig() {
-        // 实现重载配置文件的逻辑
+    func reloadConfig(server: ClashServer) {
+        guard let url = URL(string: "http://\(server.url):\(server.port)/configs?force=true") else { return }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [:])
+        
+        URLSession.shared.dataTask(with: request) { _, response, error in
+            if let httpResponse = response as? HTTPURLResponse,
+               (200...299).contains(httpResponse.statusCode) {
+                print("配置重载成功")
+            } else if let error = error {
+                print("配置重载失败：\(error.localizedDescription)")
+            }
+        }.resume()
     }
     
-    func updateGeoDatabase() {
-        // 实现更新 GEO 数据库的逻辑
+    func updateGeoDatabase(server: ClashServer) {
+        guard let url = URL(string: "http://\(server.url):\(server.port)/configs/geo") else { return }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [:])
+        
+        URLSession.shared.dataTask(with: request) { _, response, error in
+            if let httpResponse = response as? HTTPURLResponse,
+               (200...299).contains(httpResponse.statusCode) {
+                print("GEO 数据库更新成功")
+            } else if let error = error {
+                print("GEO 数据库更新失败：\(error.localizedDescription)")
+            }
+        }.resume()
     }
     
-    func clearFakeIP() {
-        // 实现清空 FakeIP 数据库的逻辑
+    func clearFakeIP(server: ClashServer) {
+        guard let url = URL(string: "http://\(server.url):\(server.port)/cache/fakeip/flush") else { return }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [:])
+        
+        URLSession.shared.dataTask(with: request) { _, response, error in
+            if let httpResponse = response as? HTTPURLResponse,
+               (200...299).contains(httpResponse.statusCode) {
+                print("FakeIP 缓存清除成功")
+            } else if let error = error {
+                print("FakeIP 缓存清除失败：\(error.localizedDescription)")
+            }
+        }.resume()
     }
     
-    func restartCore() {
-        // 实现重启核心的逻辑
+    func restartCore(server: ClashServer) {
+        guard let url = URL(string: "http://\(server.url):\(server.port)/restart") else { return }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [:])
+        
+        URLSession.shared.dataTask(with: request) { _, response, error in
+            if let httpResponse = response as? HTTPURLResponse,
+               (200...299).contains(httpResponse.statusCode) {
+                print("核心重启成功")
+            } else if let error = error {
+                print("核心重启失败：\(error.localizedDescription)")
+            }
+        }.resume()
     }
     
-    func upgradeCore() {
-        // 实现更新核心的逻辑
+    func upgradeCore(server: ClashServer) {
+        guard let url = URL(string: "http://\(server.url):\(server.port)/upgrade") else { return }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [:])
+        
+        URLSession.shared.dataTask(with: request) { _, response, error in
+            if let httpResponse = response as? HTTPURLResponse,
+               (200...299).contains(httpResponse.statusCode) {
+                print("核心更新成功")
+            } else if let error = error {
+                print("核心更新失败：\(error.localizedDescription)")
+            }
+        }.resume()
     }
 } 
