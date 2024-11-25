@@ -4,7 +4,9 @@ import Charts
 
 struct ServerDetailView: View {
     let server: ClashServer
+    @StateObject private var networkMonitor = NetworkMonitor()
     @State private var selectedTab = 0
+    @Environment(\.dismiss) private var dismiss
     
     var body: some View {
         NavigationStack {
@@ -37,33 +39,40 @@ struct ServerDetailView: View {
                     }
                     .tag(3)
                 
-                // 配置标签页
-                SettingsView(server: server)
+                // 更多标签页
+                MoreView(server: server)
                     .tabItem {
-                        Label("配置", systemImage: "gearshape")
+                        Label("More", systemImage: "ellipsis")
                     }
                     .tag(4)
-                
-                // 日志标签页
-                LogView(server: server)
-                    .tabItem {
-                        Label("日志", systemImage: "doc.text")
-                    }
-                    .tag(5)
             }
-            .navigationTitle(server.displayName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // ToolbarItem(placement: .navigationBarLeading) {
-                //     Button {
-                //         // 返回操作
-                //     } label: {
-                //         Image(systemName: "chevron.left")
-                //     }
-                // }
+                ToolbarItem(placement: .principal) {
+                    Text(server.url + ":" + server.port)
+                        .font(.headline)
+                }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("Sheer")
+                                .foregroundColor(.blue)
+                        }
+                    }
+                }
             }
+            .navigationBarBackButtonHidden(true)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(Color(.systemBackground), for: .navigationBar)
+            .onAppear {
+                networkMonitor.startMonitoring(server: server)
+            }
+            .onDisappear {
+                networkMonitor.stopMonitoring()
+            }
         }
     }
 }
@@ -72,22 +81,35 @@ struct ServerDetailView: View {
 struct SpeedChartView: View {
     let speedHistory: [SpeedRecord]
     
-    // 预设的速度刻度值（单位：字节/秒）
-    private let presetSpeeds: [Double] = [
-        1_000,      // 1 KB/s
-        10_000,     // 10 KB/s
-        100_000,    // 100 KB/s
-        1_000_000,  // 1 MB/s
-        10_000_000, // 10 MB/s
-    ]
-    
     private var maxValue: Double {
+        // 获取当前数据中的最大值
         let maxUpload = speedHistory.map { $0.upload }.max() ?? 0
         let maxDownload = speedHistory.map { $0.download }.max() ?? 0
         let currentMax = max(maxUpload, maxDownload)
         
-        // 找到合适的预设最大值
-        return presetSpeeds.first { $0 >= currentMax } ?? presetSpeeds.last ?? 10_000_000
+        // 如果没有数据或数据太小，使用最小刻度
+        if currentMax < 100_000 { // 小于 100KB/s
+            return 100_000 // 100KB/s
+        }
+        
+        // 计算合适的刻度值
+        let magnitude = pow(10, floor(log10(currentMax)))
+        let normalized = currentMax / magnitude
+        
+        // 选择合适的刻度倍数：1, 2, 5, 10
+        let scale: Double
+        if normalized <= 1 {
+            scale = 1
+        } else if normalized <= 2 {
+            scale = 2
+        } else if normalized <= 5 {
+            scale = 5
+        } else {
+            scale = 10
+        }
+        
+        // 计算最终的最大值，并留出一些余量（120%）
+        return magnitude * scale * 1.2
     }
     
     private func formatSpeed(_ speed: Double) -> String {
@@ -126,7 +148,8 @@ struct SpeedChartView: View {
                         series: .value("Type", "上传")
                     )
                     .foregroundStyle(.green)
-                    .interpolationMethod(.monotone)
+                    .interpolationMethod(.catmullRom)
+                    .lineStyle(StrokeStyle(lineWidth: 2))
                 }
                 
                 ForEach(speedHistory) { record in
@@ -137,7 +160,7 @@ struct SpeedChartView: View {
                         series: .value("Type", "上传")
                     )
                     .foregroundStyle(.green.opacity(0.1))
-                    .interpolationMethod(.monotone)
+                    .interpolationMethod(.catmullRom)
                 }
                 
                 // 下载数据
@@ -148,7 +171,8 @@ struct SpeedChartView: View {
                         series: .value("Type", "下载")
                     )
                     .foregroundStyle(.blue)
-                    .interpolationMethod(.monotone)
+                    .interpolationMethod(.catmullRom)
+                    .lineStyle(StrokeStyle(lineWidth: 2))
                 }
                 
                 ForEach(speedHistory) { record in
@@ -159,7 +183,7 @@ struct SpeedChartView: View {
                         series: .value("Type", "下载")
                     )
                     .foregroundStyle(.blue.opacity(0.1))
-                    .interpolationMethod(.monotone)
+                    .interpolationMethod(.catmullRom)
                 }
             }
             .frame(height: 200)
@@ -275,7 +299,19 @@ struct OverviewTab: View {
                     }
                     .frame(height: 200)
                     .chartYAxis {
-                        AxisMarks(position: .leading)
+                        AxisMarks(position: .leading) { value in
+                            if let memory = value.as(Double.self) {
+                                AxisGridLine()
+                                AxisValueLabel {
+                                    Text("\(Int(memory)) MB")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    .chartXAxis {
+                        AxisMarks(values: .automatic(desiredCount: 3))
                     }
                 }
             }
@@ -436,6 +472,27 @@ struct ChartCard<Content: View>: View {
 //     }
 // }
 
+struct MoreView: View {
+    let server: ClashServer
+    
+    var body: some View {
+        List {
+            NavigationLink {
+                SettingsView(server: server)
+            } label: {
+                Label("配置", systemImage: "gearshape")
+            }
+            
+            NavigationLink {
+                LogView(server: server)
+            } label: {
+                Label("日志", systemImage: "doc.text")
+            }
+        }
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 struct SettingsView: View {
     let server: ClashServer
     @StateObject private var viewModel = SettingsViewModel()
@@ -464,31 +521,7 @@ struct SettingsView: View {
                 Toggle("UDP并发", isOn: .constant(false))
             }
         }
-    }
-}
-
-struct LogView: View {
-    let server: ClashServer
-    @StateObject private var viewModel = LogViewModel()
-    
-    var body: some View {
-        VStack {
-            Picker("日志级别", selection: .constant("INFO")) {
-                Text("DEBUG").tag("DEBUG")
-                Text("INFO").tag("INFO")
-                Text("WARNING").tag("WARNING")
-                Text("ERROR").tag("ERROR")
-            }
-            .pickerStyle(.segmented)
-            .padding()
-            
-            List {
-                ForEach(0..<20) { index in
-                    let type = ["INFO", "WARNING", "ERROR", "DEBUG"][index % 4]
-                    LogRow(type: type, message: "这是一条示例日志消息 #\(index)")
-                }
-            }
-        }
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -501,7 +534,7 @@ struct ProxyGroupRow: View {
             Text("代理组名称")
                 .font(.headline)
             
-            Picker("选择代理", selection: $selectedProxy) {
+            Picker("选择理", selection: $selectedProxy) {
                 Text("Auto").tag("Auto")
                 Text("香港 01").tag("HK01")
                 Text("新加坡 01").tag("SG01")
@@ -513,31 +546,31 @@ struct ProxyGroupRow: View {
     }
 }
 
-struct LogRow: View {
-    let type: String
-    let message: String
+// struct LogRow: View {
+//     let type: String
+//     let message: String
     
-    var typeColor: Color {
-        switch type {
-        case "INFO": return .primary
-        case "WARNING": return .orange
-        case "ERROR": return .red
-        case "DEBUG": return .secondary
-        default: return .primary
-        }
-    }
+//     var typeColor: Color {
+//         switch type {
+//         case "INFO": return .primary
+//         case "WARNING": return .orange
+//         case "ERROR": return .red
+//         case "DEBUG": return .secondary
+//         default: return .primary
+//         }
+//     }
     
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(type)
-                .font(.caption)
-                .foregroundColor(typeColor)
-            Text(message)
-                .font(.system(.body, design: .monospaced))
-        }
-        .padding(.vertical, 2)
-    }
-}
+//     var body: some View {
+//         VStack(alignment: .leading, spacing: 4) {
+//             Text(type)
+//                 .font(.caption)
+//                 .foregroundColor(typeColor)
+//             Text(message)
+//                 .font(.system(.body, design: .monospaced))
+//         }
+//         .padding(.vertical, 2)
+//     }
+// }
 
 #Preview {
     NavigationStack {

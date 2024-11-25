@@ -9,9 +9,12 @@ import SwiftUI
 
 @main
 struct OpenClash_DashboardApp: App {
+    @StateObject private var networkMonitor = NetworkMonitor()
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(networkMonitor)
         }
     }
 }

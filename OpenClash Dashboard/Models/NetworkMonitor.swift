@@ -15,23 +15,70 @@ class NetworkMonitor: ObservableObject {
     private var memoryTask: URLSessionWebSocketTask?
     private var connectionsTask: URLSessionWebSocketTask?
     private let session = URLSession(configuration: .default)
+    private var server: ClashServer?
+    private var isConnected = [ConnectionType: Bool]()
+    private var isMonitoring = false
+    private var isViewActive = false
+    private var activeView: String = ""
     
-    func startMonitoring(server: ClashServer) {
-        connectToTraffic(server: server)
-        connectToMemory(server: server)
-        connectToConnections(server: server)
+    private enum ConnectionType: String {
+        case traffic = "Traffic"
+        case memory = "Memory"
+        case connections = "Connections"
+    }
+    
+    func startMonitoring(server: ClashServer, viewId: String = "overview") {
+        self.server = server
+        self.activeView = viewId
+        isViewActive = true
+        
+        if !isMonitoring {
+            isMonitoring = true
+            connectToTraffic(server: server)
+            connectToMemory(server: server)
+            connectToConnections(server: server)
+        }
+    }
+    
+    func pauseMonitoring() {
+        isViewActive = false
+        print("暂停监控")
+    }
+    
+    func resumeMonitoring() {
+        guard let server = server else { return }
+        isViewActive = true
+        print("恢复监控")
+        
+        if !isConnected[.traffic, default: false] {
+            connectToTraffic(server: server)
+        }
+        if !isConnected[.memory, default: false] {
+            connectToMemory(server: server)
+        }
+        if !isConnected[.connections, default: false] {
+            connectToConnections(server: server)
+        }
     }
     
     func stopMonitoring() {
-        print("停止所有 WebSocket 连接")
-        trafficTask?.cancel()
-        memoryTask?.cancel()
-        connectionsTask?.cancel()
+        isMonitoring = false
+        isViewActive = false
+        activeView = ""
+        
+        trafficTask?.cancel(with: .goingAway, reason: nil)
+        memoryTask?.cancel(with: .goingAway, reason: nil)
+        connectionsTask?.cancel(with: .goingAway, reason: nil)
+        
+        isConnected.removeAll()
+        server = nil
     }
     
     private func connectToTraffic(server: ClashServer) {
         guard let url = URL(string: "ws://\(server.url):\(server.port)/traffic") else { return }
-        print("正在连接 Traffic WebSocket: \(url.absoluteString)")
+        guard !isConnected[.traffic, default: false] else { return }
+        
+        print("正在连接 Traffic WebSocket...")
         
         var request = URLRequest(url: url)
         if !server.secret.isEmpty {
@@ -45,7 +92,9 @@ class NetworkMonitor: ObservableObject {
     
     private func connectToMemory(server: ClashServer) {
         guard let url = URL(string: "ws://\(server.url):\(server.port)/memory") else { return }
-        print("正在连接 Memory WebSocket: \(url.absoluteString)")
+        guard !isConnected[.memory, default: false] else { return }
+        
+        print("正在连接 Memory WebSocket...")
         
         var request = URLRequest(url: url)
         if !server.secret.isEmpty {
@@ -59,7 +108,9 @@ class NetworkMonitor: ObservableObject {
     
     private func connectToConnections(server: ClashServer) {
         guard let url = URL(string: "ws://\(server.url):\(server.port)/connections") else { return }
-        print("正在连接 Connections WebSocket: \(url.absoluteString)")
+        guard !isConnected[.connections, default: false] else { return }
+        
+        print("正在连接 Connections WebSocket...")
         
         var request = URLRequest(url: url)
         if !server.secret.isEmpty {
@@ -73,66 +124,93 @@ class NetworkMonitor: ObservableObject {
     
     private func receiveTrafficData() {
         trafficTask?.receive { [weak self] result in
+            guard let self = self else { return }
+            
             switch result {
             case .success(let message):
-                print("Traffic WebSocket 已连接并接收数据")
+                if !self.isConnected[.traffic, default: false] {
+                    print("Traffic WebSocket 已连接")
+                    self.isConnected[.traffic] = true
+                }
+                
                 switch message {
                 case .string(let text):
-                    self?.handleTrafficData(text)
+                    self.handleTrafficData(text)
                 case .data(let data):
                     if let text = String(data: data, encoding: .utf8) {
-                        self?.handleTrafficData(text)
+                        self.handleTrafficData(text)
                     }
                 @unknown default:
                     break
                 }
-                self?.receiveTrafficData() // 继续接收数据
+                self.receiveTrafficData() // 继续接收数据
+                
             case .failure(let error):
                 print("Traffic WebSocket 错误: \(error)")
+                self.isConnected[.traffic] = false
+                self.retryConnection(type: .traffic)
             }
         }
     }
     
     private func receiveMemoryData() {
         memoryTask?.receive { [weak self] result in
+            guard let self = self else { return }
+            
             switch result {
             case .success(let message):
-                print("Memory WebSocket 已连接并接收数据")
+                if !self.isConnected[.memory, default: false] {
+                    print("Memory WebSocket 已连接")
+                    self.isConnected[.memory] = true
+                }
+                
                 switch message {
                 case .string(let text):
-                    self?.handleMemoryData(text)
+                    self.handleMemoryData(text)
                 case .data(let data):
                     if let text = String(data: data, encoding: .utf8) {
-                        self?.handleMemoryData(text)
+                        self.handleMemoryData(text)
                     }
                 @unknown default:
                     break
                 }
-                self?.receiveMemoryData() // 继续接收数据
+                self.receiveMemoryData() // 继续接收数据
+                
             case .failure(let error):
                 print("Memory WebSocket 错误: \(error)")
+                self.isConnected[.memory] = false
+                self.retryConnection(type: .memory)
             }
         }
     }
     
     private func receiveConnectionsData() {
         connectionsTask?.receive { [weak self] result in
+            guard let self = self else { return }
+            
             switch result {
             case .success(let message):
-                print("Connections WebSocket 已连接并接收数据")
+                if !self.isConnected[.connections, default: false] {
+                    print("Connections WebSocket 已连接")
+                    self.isConnected[.connections] = true
+                }
+                
                 switch message {
                 case .string(let text):
-                    self?.handleConnectionsData(text)
+                    self.handleConnectionsData(text)
                 case .data(let data):
                     if let text = String(data: data, encoding: .utf8) {
-                        self?.handleConnectionsData(text)
+                        self.handleConnectionsData(text)
                     }
                 @unknown default:
                     break
                 }
-                self?.receiveConnectionsData() // 继续接收数据
+                self.receiveConnectionsData() // 继续接收数据
+                
             case .failure(let error):
                 print("Connections WebSocket 错误: \(error)")
+                self.isConnected[.connections] = false
+                self.retryConnection(type: .connections)
             }
         }
     }
@@ -166,23 +244,25 @@ class NetworkMonitor: ObservableObject {
                 self.speedHistory.removeFirst()
             }
             
-            // 添加新记录
-            self.speedHistory.append(record)
-            
-            // 对数据进行平滑处理
-            if self.speedHistory.count > 1 {
-                let lastIndex = self.speedHistory.count - 1
-                let previousRecord = self.speedHistory[lastIndex - 1]
+            // 添加新记录并进行平滑处理
+            if !self.speedHistory.isEmpty {
+                let lastRecord = self.speedHistory.last!
                 
-                // 如果当前值为0且前一个值不为0，添加一个渐变到0的点
-                if record.upload == 0 && previousRecord.upload > 0 {
-                    let intermediateRecord = SpeedRecord(
-                        timestamp: record.timestamp.addingTimeInterval(-0.1),
-                        upload: previousRecord.upload * 0.1,
-                        download: previousRecord.download * 0.1
-                    )
-                    self.speedHistory.insert(intermediateRecord, at: lastIndex)
-                }
+                // 计算平滑值
+                let smoothingFactor = 0.1 // 平滑系数，可以根据需要调整
+                let smoothedUpload = lastRecord.upload * (1 - smoothingFactor) + Double(traffic.up) * smoothingFactor
+                let smoothedDownload = lastRecord.download * (1 - smoothingFactor) + Double(traffic.down) * smoothingFactor
+                
+                // 创建平滑后的记录
+                let smoothedRecord = SpeedRecord(
+                    timestamp: Date(),
+                    upload: smoothedUpload,
+                    download: smoothedDownload
+                )
+                
+                self.speedHistory.append(smoothedRecord)
+            } else {
+                self.speedHistory.append(record)
             }
         }
     }
@@ -232,6 +312,30 @@ class NetworkMonitor: ObservableObject {
         }
         let gb = mb / 1024
         return String(format: "%.2f GB", gb)
+    }
+    
+    private func retryConnection(type: ConnectionType) {
+        guard let server = server,
+              isMonitoring,
+              isViewActive else { return }
+        
+        print("准备重试连接 \(type.rawValue) WebSocket")
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self = self,
+                  self.isMonitoring,
+                  self.isViewActive else { return }
+            
+            print("开始重新连接 \(type.rawValue) WebSocket...")
+            switch type {
+            case .traffic:
+                self.connectToTraffic(server: server)
+            case .memory:
+                self.connectToMemory(server: server)
+            case .connections:
+                self.connectToConnections(server: server)
+            }
+        }
     }
 }
 
