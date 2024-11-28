@@ -26,6 +26,8 @@ struct LogView: View {
                 )
             }
         }
+        .navigationTitle("日志")
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             viewModel.connect(to: server)
         }

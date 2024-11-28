@@ -201,6 +201,7 @@ struct SettingsView: View {
                 Text("更新核心是一个高风险操作，可能会导致服务不可用。除非您明确知道自己在做什么，否则不建议执行此操作。\n\n确定要继续吗？")
             }
         }
+        .navigationTitle("配置")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             viewModel.fetchConfig(server: server)
