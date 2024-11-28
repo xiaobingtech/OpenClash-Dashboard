@@ -141,9 +141,7 @@ class ConnectionsViewModel: ObservableObject {
         connectionsTask = nil
         errorTracker.reset()
         
-        DispatchQueue.main.async { [weak self] in
-            self?.connectionState = .paused
-        }
+        updateConnectionState(.paused)
     }
     
     private func connectToConnections(server: ClashServer) {
@@ -259,6 +257,30 @@ class ConnectionsViewModel: ObservableObject {
     private let maxHistoryCount = 200
     private var connectionHistory: [String: ClashConnection] = [:] // 用于存储历史记录
     
+    private func updateConnectionState(_ newState: ConnectionState) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // 只有在以下情况才更新状态:
+            // 1. 新状态是错误状态
+            // 2. 当前不是错误状态
+            // 3. 状态确实发生了变化
+            if case .error = newState {
+                self.connectionState = newState
+            } else if case .error = self.connectionState {
+                // 如果当前是错误状态，只有在明确要切换到其他状态时才更新
+                if case .connecting = newState {
+                    self.connectionState = newState
+                }
+            } else if self.connectionState != newState {
+                self.connectionState = newState
+            }
+            
+            // 记录状态变化
+            log("状态更新: \(self.connectionState.message)")
+        }
+    }
+    
     private func handleConnectionsMessage(_ data: Data) {
         do {
             let response = try JSONDecoder().decode(ConnectionsResponse.self, from: data)
@@ -266,11 +288,11 @@ class ConnectionsViewModel: ObservableObject {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 
-                // 更新状态和流量数据
-                if self.connectionState != .connected {
-                    log("✅ WebSocket 已连接")
+                // 只有在成功接收到消息且当前不是错误状态时才更新为已连接
+                if case .error = self.connectionState {
+                    return
                 }
-                self.connectionState = .connected
+                self.updateConnectionState(.connected)
                 self.totalUpload = response.uploadTotal
                 self.totalDownload = response.downloadTotal
                 
@@ -381,9 +403,7 @@ class ConnectionsViewModel: ObservableObject {
             }
         } catch {
             log("❌ 解码误：\(error)")
-            DispatchQueue.main.async { [weak self] in
-                self?.connectionState = .error("数据解析错误: \(error.localizedDescription)")
-            }
+            self.updateConnectionState(.error("数据解析错误: \(error.localizedDescription)"))
         }
     }
     
@@ -477,7 +497,7 @@ class ConnectionsViewModel: ObservableObject {
             guard !Task.isCancelled else { return }
             
             await MainActor.run {
-                self.connectionState = .connecting
+                self.updateConnectionState(.connecting)
                 self.isReconnecting = false
                 
                 if let server = self.server {

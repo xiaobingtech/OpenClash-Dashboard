@@ -37,12 +37,12 @@ struct ContentView: View {
                         
                         // 设置卡片
                         VStack(spacing: 16) {
-                            SettingsLinkRow(
-                                title: "外观",
-                                icon: "paintbrush.fill",
-                                iconColor: .purple,
-                                destination: ThemeSettingsView()
-                            )
+                            // SettingsLinkRow(
+                            //     title: "外观",
+                            //     icon: "paintbrush.fill",
+                            //     iconColor: .purple,
+                            //     destination: ThemeSettingsView()
+                            // )
                             
                             SettingsLinkRow(
                                 title: "如何使用",
