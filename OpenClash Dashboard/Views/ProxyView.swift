@@ -349,7 +349,7 @@ struct ProxyGroupCard: View {
                     }
                 }
                 // 将动画移到这里，确保它持续运行
-                .onChange(of: selectedNode) { _, _ in
+                .onChange(of: selectedNode) { newValue in
                     withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
                         isGlowing = true
                     }
@@ -471,8 +471,8 @@ struct ProxyGroupCard: View {
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
-        .onChange(of: selectedNode) { oldValue, newValue in
-            print("节点选择变化 - 组：\(name), 旧节点：\(oldValue), 新节点：\(newValue)")
+        .onChange(of: selectedNode) { newValue in
+            print("节点选择变化 - 组：\(name), 新节点：\(newValue)")
         }
         .onAppear {
             withAnimation {

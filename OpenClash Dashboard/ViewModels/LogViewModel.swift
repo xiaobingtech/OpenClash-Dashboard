@@ -4,12 +4,33 @@ import SwiftUI
 class LogViewModel: ObservableObject {
     @Published var logs: [LogMessage] = []
     @Published var isConnected = false
+    private var logLevel: String = "info"
     
     private var webSocketTask: URLSessionWebSocketTask?
     private let session = URLSession(configuration: .default)
     private var currentServer: ClashServer?
+    private var pingTask: Task<Void, Never>?
+    private var receiveTask: Task<Void, Never>?
+    private var isReconnecting = false
+    
+    // 添加设置日志级别的方法
+    func setLogLevel(_ level: String) {
+        if self.logLevel != level {
+            self.logLevel = level
+            print("📝 切换日志级别到: \(level)")
+            
+            Task { @MainActor in
+                self.logs.removeAll()
+                if let server = self.currentServer {
+                    self.connect(to: server)
+                }
+            }
+        }
+    }
     
     func connect(to server: ClashServer) {
+        guard !isReconnecting else { return }
+        
         currentServer = server
         
         var components = URLComponents()
@@ -18,7 +39,8 @@ class LogViewModel: ObservableObject {
         components.port = Int(server.port)
         components.path = "/logs"
         components.queryItems = [
-            URLQueryItem(name: "token", value: server.secret)
+            URLQueryItem(name: "token", value: server.secret),
+            URLQueryItem(name: "level", value: logLevel)
         ]
         
         guard let url = components.url else { return }
@@ -36,8 +58,50 @@ class LogViewModel: ObservableObject {
         
         webSocketTask?.cancel()
         webSocketTask = session.webSocketTask(with: request)
+        
+        // 添加一个 ping 任务来确认连接状态
+        schedulePing()
+        
         webSocketTask?.resume()
+        
+        // 连接建立时就更新状态
+        DispatchQueue.main.async {
+            self.isConnected = true
+        }
+        
         receiveLog()
+    }
+    
+    // 修改 ping 方法来使用消息发送代替 ping
+    private func schedulePing() {
+        guard let webSocketTask = webSocketTask else { return }
+        
+        let task = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000) // 5秒
+                
+                do {
+                    // 发送一个空消息作为 ping
+                    try await webSocketTask.send(.string("ping"))
+                    await MainActor.run {
+                        self.isConnected = true
+                    }
+                } catch {
+                    print("❌ Ping 失败: \(error.localizedDescription)")
+                    await MainActor.run {
+                        self.isConnected = false
+                    }
+                    // 尝试重新连接
+                    if let server = self.currentServer {
+                        self.connect(to: server)
+                    }
+                    break
+                }
+            }
+        }
+        
+        // 存储 task 以便在需要时取消
+        pingTask = task
     }
     
     private func receiveLog() {
@@ -46,8 +110,19 @@ class LogViewModel: ObservableObject {
             
             switch result {
             case .success(let message):
+                // 成功接收消息时更新连接状态
+                DispatchQueue.main.async {
+                    self.isConnected = true
+                }
+                
                 switch message {
                 case .string(let text):
+                    // 忽略 ping 消息
+                    if text == "ping" {
+                        // 继续接收下一条消息
+                        self.receiveLog()
+                        return
+                    }
                     print("📝 收到日志: \(text)")
                     self.handleLog(text)
                 case .data(let data):
@@ -63,8 +138,8 @@ class LogViewModel: ObservableObject {
                 
             case .failure(let error):
                 print("❌ WebSocket 错误: \(error.localizedDescription)")
-                DispatchQueue.main.async { [weak self] in
-                    self?.isConnected = false
+                DispatchQueue.main.async {
+                    self.isConnected = false
                 }
                 // 3秒后重连
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
@@ -94,6 +169,8 @@ class LogViewModel: ObservableObject {
     }
     
     func disconnect() {
+        pingTask?.cancel()
+        pingTask = nil
         webSocketTask?.cancel(with: .goingAway, reason: nil)
         webSocketTask = nil
         DispatchQueue.main.async {

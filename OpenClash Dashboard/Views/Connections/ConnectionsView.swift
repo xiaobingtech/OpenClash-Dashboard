@@ -225,7 +225,7 @@ struct ConnectionsView: View {
                     }
             }
         }
-        .alert("确认清理已断开连接", isPresented: $showClearClosedConfirmation) {
+        .alert("确��清理已断开连接", isPresented: $showClearClosedConfirmation) {
             Button("取消", role: .cancel) { }
             Button("清理", role: .destructive) {
                 viewModel.clearClosedConnections()
@@ -337,6 +337,24 @@ struct ConnectionsView: View {
         }
     }
     
+    private func EmptyStateView() -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "network.slash")
+                .font(.system(size: 48))
+                .foregroundColor(.secondary)
+            
+            Text("暂无连接")
+                .font(.headline)
+                .foregroundColor(.primary)
+            
+            Text("当前没有活跃的网络连接")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGroupedBackground))
+    }
+    
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             VStack(spacing: 0) {
@@ -382,36 +400,22 @@ struct ConnectionsView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 
-                // 连接列表
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(filteredConnections) { connection in
-                            ConnectionRow(
-                                connection: connection,
-                                viewModel: viewModel,
-                                tagViewModel: tagViewModel
-                            )
-                        }
-                    }
-                    .animation(.default, value: filteredConnections)
-                }
-                .listStyle(.plain)
-                .background(Color(.systemGroupedBackground))
-                .overlay {
-                    if filteredConnections.isEmpty && viewModel.connectionState == .connected {
-                        ContentUnavailableView(
-                            label: {
-                                Label("没有连接", systemImage: "network.slash")
-                            },
-                            description: {
-                                if !searchText.isEmpty {
-                                    Text("没有找到匹配的连接")
-                                } else {
-                                    Text("当前没有可展示的连接")
-                                }
+                if viewModel.connections.isEmpty {
+                    EmptyStateView()
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(filteredConnections) { connection in
+                                ConnectionRow(
+                                    connection: connection,
+                                    viewModel: viewModel,
+                                    tagViewModel: tagViewModel
+                                )
                             }
-                        )
+                        }
+                        .padding(.vertical, 8)
                     }
+                    .background(Color(.systemGroupedBackground))
                 }
             }
             .refreshable {
