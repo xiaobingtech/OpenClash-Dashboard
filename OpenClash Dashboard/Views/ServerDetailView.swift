@@ -49,7 +49,7 @@ struct ServerDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text(server.url + ":" + server.port)
+                    Text(server.name.isEmpty ? "\(server.url):\(server.port)" : server.name)
                         .font(.headline)
                 }
                 ToolbarItem(placement: .navigationBarLeading) {
