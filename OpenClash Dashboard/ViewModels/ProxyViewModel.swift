@@ -203,6 +203,11 @@ class ProxyViewModel: ObservableObject {
     }
     
     func testGroupDelay(groupName: String, nodes: [ProxyNode]) async {
+        // 获取设置中的测试 URL
+        let settingsViewModel = SettingsViewModel()
+        await settingsViewModel.fetchConfig(server: server)
+        let testUrl = settingsViewModel.testUrl
+        
         for node in nodes {
             if node.name == "REJECT" {
                 continue
@@ -217,7 +222,7 @@ class ProxyViewModel: ObservableObject {
             guard var components = URLComponents(string: urlString) else { return }
             
             components.queryItems = [
-                URLQueryItem(name: "url", value: "https://www.gstatic.com/generate_204"),
+                URLQueryItem(name: "url", value: testUrl),
                 URLQueryItem(name: "timeout", value: "2000")
             ]
             
@@ -336,8 +341,13 @@ class ProxyViewModel: ObservableObject {
         
         guard var components = URLComponents(string: urlString) else { return }
         
+        // 获取设置中的测试 URL
+        let settingsViewModel = SettingsViewModel()
+        await settingsViewModel.fetchConfig(server: server)
+        let testUrl = settingsViewModel.testUrl
+        
         components.queryItems = [
-            URLQueryItem(name: "url", value: "https://www.gstatic.com/generate_204"),
+            URLQueryItem(name: "url", value: testUrl),
             URLQueryItem(name: "timeout", value: "2000")
         ]
         
