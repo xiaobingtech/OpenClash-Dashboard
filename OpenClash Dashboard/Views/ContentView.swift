@@ -9,13 +9,40 @@ struct ContentView: View {
         NavigationStack {
             ScrollView {
                 if viewModel.servers.isEmpty {
-                    EmptyStateView(
-                        title: "没有服务器",
-                        systemImage: "server.rack",
-                        description: "点击添加按钮来添加一个新的服务器",
-                        action: { showingAddSheet = true },
-                        actionTitle: "添加服务器"
-                    )
+                    VStack(spacing: 20) {
+                        Spacer()
+                            .frame(height: 60)
+                        
+                        Image(systemName: "server.rack")
+                            .font(.system(size: 50))
+                            .foregroundColor(.secondary.opacity(0.7))
+                            .padding(.bottom, 10)
+                        
+                        Text("没有服务器")
+                            .font(.title2)
+                            .fontWeight(.medium)
+                        
+                        Text("点击添加按钮来添加一个新的服务器")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+                        
+                        Button {
+                            showingAddSheet = true
+                        } label: {
+                            Text("添加服务器")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .frame(width: 160, height: 44)
+                                .background(Color.blue)
+                                .cornerRadius(22)
+                        }
+                        .padding(.top, 20)
+                        
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     VStack(spacing: 20) {
                         // 服务器卡片列表
@@ -84,7 +111,7 @@ struct ContentView: View {
                     } label: {
                         Image(systemName: "plus.circle.fill")
                             .font(.title2)
-                            .foregroundColor(.orange)
+                            .foregroundColor(.blue)
                     }
                 }
             }

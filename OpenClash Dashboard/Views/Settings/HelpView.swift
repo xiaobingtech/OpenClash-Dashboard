@@ -19,7 +19,7 @@ struct HelpView: View {
                     
                     Text("3. 管理服务器")
                         .font(.headline)
-                    Text("左滑服务器项目可以进行编辑或删除操作。下拉列表可以刷新所有服务器状态。")
+                    Text("长按服务器项目可以进行编辑或删除操作。下拉列表可以刷新所有服务器状态。")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
