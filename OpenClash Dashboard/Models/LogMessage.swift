@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+
 struct LogMessage: Identifiable, Codable {
     let id = UUID()
     let type: LogType
@@ -14,7 +15,7 @@ struct LogMessage: Identifiable, Codable {
         
         var color: Color {
             switch self {
-            case .info: return .primary
+            case .info: return .blue
             case .warning: return .orange
             case .error: return .red
             case .debug: return .secondary
@@ -36,4 +37,4 @@ struct LogMessage: Identifiable, Codable {
         payload = try container.decode(String.self, forKey: .payload)
         timestamp = Date()
     }
-} 
+}

@@ -10,7 +10,11 @@ struct ContentView: View {
             ScrollView {
                 if viewModel.servers.isEmpty {
                     EmptyStateView(
-                        showingAddSheet: $showingAddSheet
+                        title: "没有服务器",
+                        systemImage: "server.rack",
+                        description: "点击添加按钮来添加一个新的服务器",
+                        action: { showingAddSheet = true },
+                        actionTitle: "添加服务器"
                     )
                 } else {
                     VStack(spacing: 20) {
@@ -72,7 +76,7 @@ struct ContentView: View {
                 }
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("Sheer")
+            .navigationTitle("Clash Dash")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -170,57 +174,6 @@ struct SettingsLinkRow<Destination: View>: View {
                     .foregroundColor(.secondary)
             }
         }
-    }
-}
-
-// 新增空状态视图
-struct EmptyStateView: View {
-    @Binding var showingAddSheet: Bool
-    
-    var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
-            
-            // 图标
-            ZStack {
-                Circle()
-                    .fill(Color.orange.opacity(0.1))
-                    .frame(width: 100, height: 100)
-                
-                Image(systemName: "server.rack")
-                    .font(.system(size: 40))
-                    .foregroundColor(.orange)
-            }
-            
-            // 文字说明
-            VStack(spacing: 8) {
-                Text("还没有服务器")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                
-                Text("点击右上角的加号添加一个服务器")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            
-            // 添加按钮
-            Button {
-                showingAddSheet = true
-            } label: {
-                Label("添加服务器", systemImage: "plus.circle.fill")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
-                    .background(Color.orange)
-                    .cornerRadius(25)
-            }
-            
-            Spacer()
-        }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

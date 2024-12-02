@@ -12,24 +12,37 @@ class LogViewModel: ObservableObject {
     private var pingTask: Task<Void, Never>?
     private var receiveTask: Task<Void, Never>?
     private var isReconnecting = false
+    private var connectionRetryCount = 0
+    private let maxRetryCount = 5
     
     // 添加设置日志级别的方法
     func setLogLevel(_ level: String) {
-        if self.logLevel != level {
-            self.logLevel = level
-            print("📝 切换日志级别到: \(level)")
-            
-            Task { @MainActor in
-                self.logs.removeAll()
-                if let server = self.currentServer {
-                    self.connect(to: server)
-                }
+        guard self.logLevel != level else { return }
+        self.logLevel = level
+        print("📝 切换日志级别到: \(level)")
+        
+        Task { @MainActor in
+            // 先断开现有连接
+            disconnect(clearLogs: false)
+            // 等待短暂延迟确保连接完全关闭
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
+            // 重新连接
+            if let server = self.currentServer {
+                connect(to: server)
             }
         }
     }
     
     func connect(to server: ClashServer) {
         guard !isReconnecting else { return }
+        
+        if connectionRetryCount >= maxRetryCount {
+            print("⚠️ 达到最大重试次数，停止重连")
+            connectionRetryCount = 0
+            return
+        }
+        
+        connectionRetryCount += 1
         
         currentServer = server
         
@@ -77,30 +90,38 @@ class LogViewModel: ObservableObject {
         guard let webSocketTask = webSocketTask else { return }
         
         let task = Task {
+            var failureCount = 0
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 5_000_000_000) // 5秒
-                
                 do {
-                    // 发送一个空消息作为 ping
+                    try await Task.sleep(nanoseconds: 5_000_000_000) // 5秒
                     try await webSocketTask.send(.string("ping"))
+                    
                     await MainActor.run {
                         self.isConnected = true
+                        failureCount = 0 // 重置失败计数
                     }
                 } catch {
-                    print("❌ Ping 失败: \(error.localizedDescription)")
-                    await MainActor.run {
-                        self.isConnected = false
+                    // 忽略取消错误的日志输出
+                    if !error.isCancellationError {
+                        failureCount += 1
+                        print("❌ Ping 失败 (\(failureCount)): \(error.localizedDescription)")
+                        
+                        await MainActor.run {
+                            self.isConnected = false
+                        }
+                        
+                        // 只有在连续失败多次后才重连
+                        if failureCount >= 3 {
+                            await MainActor.run {
+                                reconnect()
+                            }
+                            break
+                        }
                     }
-                    // 尝试重新连接
-                    if let server = self.currentServer {
-                        self.connect(to: server)
-                    }
-                    break
                 }
             }
         }
         
-        // 存储 task 以便在需要时取消
         pingTask = task
     }
     
@@ -113,6 +134,7 @@ class LogViewModel: ObservableObject {
                 // 成功接收消息时更新连接状态
                 DispatchQueue.main.async {
                     self.isConnected = true
+                    self.connectionRetryCount = 0  // 重置重试计数
                 }
                 
                 switch message {
@@ -123,11 +145,9 @@ class LogViewModel: ObservableObject {
                         self.receiveLog()
                         return
                     }
-                    print("📝 收到日志: \(text)")
                     self.handleLog(text)
                 case .data(let data):
                     if let text = String(data: data, encoding: .utf8) {
-                        print("📝 收到日志数据: \(text)")
                         self.handleLog(text)
                     }
                 @unknown default:
@@ -137,15 +157,24 @@ class LogViewModel: ObservableObject {
                 self.receiveLog()
                 
             case .failure(let error):
-                print("❌ WebSocket 错误: \(error.localizedDescription)")
-                DispatchQueue.main.async {
-                    self.isConnected = false
+                // 只在非取消错误时打印
+                if (error as NSError).code != NSURLErrorCancelled {
+                    print("❌ WebSocket 错误: \(error.localizedDescription)")
                 }
-                // 3秒后重连
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                    guard let self = self else { return }
-                    if let server = self.currentServer {
-                        self.connect(to: server)
+                
+                DispatchQueue.main.async {
+                    // 只在确实断开连接时更新状态
+                    if self.webSocketTask != nil {
+                        self.isConnected = false
+                        // 3秒后重连，但要考虑重试次数
+                        if self.connectionRetryCount < self.maxRetryCount {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                                guard let self = self else { return }
+                                if let server = self.currentServer {
+                                    self.connect(to: server)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -168,14 +197,41 @@ class LogViewModel: ObservableObject {
         }
     }
     
-    func disconnect() {
+    func disconnect(clearLogs: Bool = true) {
         pingTask?.cancel()
         pingTask = nil
         webSocketTask?.cancel(with: .goingAway, reason: nil)
         webSocketTask = nil
+        
         DispatchQueue.main.async {
             self.isConnected = false
-            self.logs.removeAll()
+            if clearLogs {
+                self.logs.removeAll()
+            }
         }
+    }
+    
+    private func reconnect() {
+        guard !isReconnecting else { return }
+        isReconnecting = true
+        
+        Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000) // 3秒重连延迟
+            await MainActor.run {
+                if let server = self.currentServer {
+                    connect(to: server)
+                }
+                isReconnecting = false
+            }
+        }
+    }
+}
+
+// 添加扩展来判断错误类型
+extension Error {
+    var isCancellationError: Bool {
+        let nsError = self as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
+            || self is CancellationError
     }
 } 

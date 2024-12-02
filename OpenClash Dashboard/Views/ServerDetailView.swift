@@ -58,7 +58,7 @@ struct ServerDetailView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "chevron.left")
-                            Text("Sheer")
+                            Text("Clash Dash")
                                 .foregroundColor(.blue)
                         }
                     }

@@ -370,33 +370,10 @@ class ConnectionsViewModel: ObservableObject {
                         return conn1.start > conn2.start
                     }
                     
-                    // 只有当超过最大记录数时才清理
-                    if sortedConnections.count > self.maxHistoryCount {
-                        // 保留所有活跃连接
-                        let activeConnections = sortedConnections.filter { $0.isAlive }
-                        
-                        // 计算可以保留的已关闭连接数量
-                        let remainingSlots = self.maxHistoryCount - activeConnections.count
-                        
-                        // 从已关闭的连接中选择最新的
-                        let inactiveConnections = sortedConnections
-                            .filter { !$0.isAlive }
-                            .prefix(remainingSlots)
-                        
-                        // 合并并重新排序
-                        sortedConnections = (activeConnections + Array(inactiveConnections))
-                            .sorted { $0.start > $1.start }
-                        
-                        // 更新历史记录字典
-                        self.connectionHistory = Dictionary(
-                            uniqueKeysWithValues: sortedConnections.map { ($0.id, $0) }
-                        )
-                    }
-                    
                     self.connections = sortedConnections
                 }
                 
-                // 更新上一次的连接数据
+                // 更新上一次的连接数据，只保存活跃连接
                 self.previousConnections = Dictionary(
                     uniqueKeysWithValues: response.connections.map { ($0.id, $0) }
                 )
@@ -520,7 +497,7 @@ class ConnectionsViewModel: ObservableObject {
         }
     }
     
-    // 简化清理方法，完全移除已关闭的连接
+    // 清理已关闭的连接
     func clearClosedConnections() {
         print("\n🧹 开始清理已断开连接")
         print("当前连接总数:", connections.count)
@@ -534,7 +511,8 @@ class ConnectionsViewModel: ObservableObject {
         
         // 从历史记录中也移除这些连接
         for id in closedConnectionIds {
-            previousConnections.removeValue(forKey: id)
+            connectionHistory.removeValue(forKey: id)  // 修改这里：从 connectionHistory 中移除
+            previousConnections.removeValue(forKey: id)  // 同时从 previousConnections 中移除
         }
         
         print("清理后连接数量:", connections.count)
