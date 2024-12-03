@@ -77,37 +77,53 @@ class ProxyViewModel: ObservableObject {
     @Published var groups: [ProxyGroup] = []
     @Published var nodes: [ProxyNode] = []
     @Published var providerNodes: [String: [ProxyNode]] = [:]
-    private let server: ClashServer
-    
-    // 添加测速状态追踪
     @Published var testingNodes: Set<String> = []
     
-    // 添加一个属性来追踪当前的数据获取任务
+    private let server: ClashServer
     private var currentTask: Task<Void, Never>?
+    private let settingsViewModel = SettingsViewModel()
     
     init(server: ClashServer) {
         self.server = server
-        // 初始化时获取一次数据
         Task {
             await fetchProxies()
+            settingsViewModel.fetchConfig(server: server)
         }
+    }
+    
+    private func makeRequest(path: String) -> URLRequest? {
+        let scheme = server.useSSL ? "https" : "http"
+        guard let url = URL(string: "\(scheme)://\(server.url):\(server.port)/\(path)") else {
+            print("无效的 URL")
+            return nil
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        return request
     }
     
     @MainActor
     func fetchProxies() async {
-        await currentTask?.value
+        currentTask?.cancel()
         
         currentTask = Task {
             do {
                 // 1. 获取 providers 数据
-                guard let providersUrl = URL(string: "http://\(server.url):\(server.port)/providers/proxies") else { return }
-                var providersRequest = URLRequest(url: providersUrl)
-                providersRequest.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+                guard let providersRequest = makeRequest(path: "providers/proxies") else { return }
                 
-                let (providersData, _) = try await URLSession.shared.data(for: providersRequest)
+                let (providersData, response) = try await URLSession.shared.data(for: providersRequest)
                 if Task.isCancelled { return }
                 
-                print("收到providers数据响应")
+                // 检查 HTTPS 响应
+                if server.useSSL,
+                   let httpsResponse = response as? HTTPURLResponse,
+                   httpsResponse.statusCode == 400 {
+                    print("SSL 连接失败，服务器可能不支持 HTTPS")
+                    return
+                }
+                
                 let providersResponse = try JSONDecoder().decode(ProxyProvidersResponse.self, from: providersData)
                 
                 // 2. 更新 providers 数据
@@ -140,9 +156,7 @@ class ProxyViewModel: ObservableObject {
                 }
                 
                 // 4. 获取代理数据
-                guard let proxiesUrl = URL(string: "http://\(server.url):\(server.port)/proxies") else { return }
-                var proxiesRequest = URLRequest(url: proxiesUrl)
-                proxiesRequest.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+                guard let proxiesRequest = makeRequest(path: "proxies") else { return }
                 
                 let (proxiesData, _) = try await URLSession.shared.data(for: proxiesRequest)
                 if Task.isCancelled { return }
@@ -188,198 +202,165 @@ class ProxyViewModel: ObservableObject {
                 print("- 节点数量:", self.nodes.count)
                 
             } catch {
-                if let urlError = error as? URLError, urlError.code == .cancelled {
-                    print("任务被取消，这是正常的")
-                } else {
-                    print("获取数据出错：", error)
-                    if let decodingError = error as? DecodingError {
-                        print("解码错误详情：", decodingError)
+                if let urlError = error as? URLError {
+                    switch urlError.code {
+                    case .secureConnectionFailed:
+                        print("SSL 连接失败：服务器的 SSL 证书无效")
+                    case .serverCertificateHasBadDate:
+                        print("SSL 错误：服务器证书已过期")
+                    case .serverCertificateUntrusted:
+                        print("SSL 错误：服务器证书不受信任")
+                    case .serverCertificateNotYetValid:
+                        print("SSL 错误：服务器证书尚未生效")
+                    case .cannotConnectToHost:
+                        print("无法连接到服务器：\(server.useSSL ? "HTTPS" : "HTTP") 连接失败")
+                    default:
+                        print("网络错误：\(urlError.localizedDescription)")
                     }
+                } else {
+                    print("其他错误：\(error.localizedDescription)")
                 }
             }
         }
-        
-        await currentTask?.value
     }
     
     func testGroupDelay(groupName: String, nodes: [ProxyNode]) async {
-        // 获取设置中的测试 URL
-        let settingsViewModel = SettingsViewModel()
-        await settingsViewModel.fetchConfig(server: server)
-        let testUrl = settingsViewModel.testUrl
-        
         for node in nodes {
-            if node.name == "REJECT" {
+            if node.name == "REJECT" || node.name == "DIRECT" {
                 continue
             }
             
-            if node.name == "DIRECT" {
-                await testNodeDelay(nodeName: "DIRECT")
-                continue
-            }
+            let encodedGroupName = groupName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? groupName
+            let path = "group/\(encodedGroupName)/delay"
             
-            let urlString = "http://\(server.url):\(server.port)/group/\(groupName)/delay"
-            guard var components = URLComponents(string: urlString) else { return }
+            guard var request = makeRequest(path: path) else { continue }
             
-            components.queryItems = [
-                URLQueryItem(name: "url", value: testUrl),
+            var components = URLComponents(url: request.url!, resolvingAgainstBaseURL: true)
+            components?.queryItems = [
+                URLQueryItem(name: "url", value: settingsViewModel.testUrl),
                 URLQueryItem(name: "timeout", value: "2000")
             ]
             
-            guard let url = components.url else { return }
+            guard let finalUrl = components?.url else { continue }
+            request.url = finalUrl
             
-            var request = URLRequest(url: url)
-            request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            
-            // 添加测试状态动画
-            await MainActor.run {
-                testingNodes.insert(node.id)
+            _ = await MainActor.run {
+                testingNodes.insert(node.name)
             }
             
             do {
-                let (data, _) = try await URLSession.shared.data(for: request)
-                // print("收到响应数据：\(String(data: data, encoding: .utf8) ?? "")")
+                let (data, response) = try await URLSession.shared.data(for: request)
                 
-                // 尝试解析错误消息
-                if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data) {
-                    // print("API 返回错误：\(errorResponse)")
-                    await MainActor.run {
-                        // 发生错误时移除所有测试状态
-                        for node in nodes {
-                            testingNodes.remove(node.id)
-                        }
-                    }
-                    return
+                // 检查 HTTPS 响应
+                if server.useSSL,
+                   let httpsResponse = response as? HTTPURLResponse,
+                   httpsResponse.statusCode == 400 {
+                    print("SSL 连接失败，服务器可能不支持 HTTPS")
+                    continue
                 }
                 
-                // 解析延迟数据
-                let delays = try JSONDecoder().decode([String: Int].self, from: data)
-                // print("解析延迟数据：\(delays)")
-                
-                await MainActor.run {
-                    // 更新所有节点的延迟
-                    for (nodeName, delay) in delays {
-                        // 更新 providerNodes 中的节点
-                        for (providerName, providerNodes) in self.providerNodes {
-                            self.providerNodes[providerName] = providerNodes.map { node in
-                                if node.name == nodeName {
-                                    return ProxyNode(
-                                        id: node.id,
-                                        name: node.name,
-                                        type: node.type,
-                                        alive: node.alive,
-                                        delay: delay,
-                                        history: node.history
-                                    )
-                                }
-                                return node
-                            }
+                if let delays = try? JSONDecoder().decode([String: Int].self, from: data) {
+                    _ = await MainActor.run {
+                        for (nodeName, delay) in delays {
+                            updateNodeDelay(nodeName: nodeName, delay: delay)
                         }
-                        
-                        // 更新 nodes 中的节点
-                        self.nodes = self.nodes.map { node in
-                            if node.name == nodeName {
-                                return ProxyNode(
-                                    id: node.id,
-                                    name: node.name,
-                                    type: node.type,
-                                    alive: node.alive,
-                                    delay: delay,
-                                    history: node.history
-                                )
-                            }
-                            return node
-                        }
-                    }
-                    
-                    // 从测试集合中移除所有节点
-                    for node in nodes {
-                        testingNodes.remove(node.id)
+                        testingNodes.remove(node.name)
                     }
                 }
             } catch {
-                // print("测速错误：\(error)")
-                if let decodingError = error as? DecodingError {
-                    // print("解码错误详情：\(decodingError)")
+                _ = await MainActor.run {
+                    testingNodes.remove(node.name)
                 }
+                handleNetworkError(error)
             }
+        }
+    }
+    
+    private func handleNetworkError(_ error: Error) {
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .secureConnectionFailed:
+                print("SSL 连接失败：服务器的 SSL 证书无效")
+            case .serverCertificateHasBadDate:
+                print("SSL 错误：服务器证书已过期")
+            case .serverCertificateUntrusted:
+                print("SSL 错误：服务器证书不受信任")
+            case .serverCertificateNotYetValid:
+                print("SSL 错误：服务器证书尚未生效")
+            case .cannotConnectToHost:
+                print("无法连接到服务器：\(server.useSSL ? "HTTPS" : "HTTP") 连接失败")
+            default:
+                print("网络错误：\(urlError.localizedDescription)")
+            }
+        } else {
+            print("其他错误：\(error.localizedDescription)")
         }
     }
     
     func selectProxy(groupName: String, proxyName: String) async {
-        // 1. 选择代理节点
-        guard let url = URL(string: "http://\(server.url):\(server.port)/proxies/\(groupName)") else { return }
+        let encodedGroupName = groupName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? groupName
+        guard var request = makeRequest(path: "proxies/\(encodedGroupName)") else { return }
         
-        var request = URLRequest(url: url)
+        // 设置请求方法和请求体
         request.httpMethod = "PUT"
-        request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
         let body = ["name": proxyName]
         request.httpBody = try? JSONEncoder().encode(body)
         
         do {
-            let (_, _) = try await URLSession.shared.data(for: request)
+            let (_, response) = try await URLSession.shared.data(for: request)
             
-            // 2. 选择成功后，根据节点类型决定是否测试延迟
-            if proxyName != "REJECT" {  // 不为 REJECT 节点时才测试延迟
+            // 检查 HTTPS 响应
+            if server.useSSL,
+               let httpsResponse = response as? HTTPURLResponse,
+               httpsResponse.statusCode == 400 {
+                print("SSL 连接失败，服务器可能不支持 HTTPS")
+                return
+            }
+            
+            // 如果不是 REJECT 节点，测试延迟
+            if proxyName != "REJECT" {
                 await testNodeDelay(nodeName: proxyName)
             }
             
-            // 3. 最后刷新数据
+            // 刷新代理数据
             await fetchProxies()
+            
         } catch {
-            print("Error selecting proxy: \(error)")
+            handleNetworkError(error)
         }
     }
     
     // 添加新方法用于测试单个节点延迟
     private func testNodeDelay(nodeName: String) async {
-        let urlString = "http://\(server.url):\(server.port)/proxies/\(nodeName)/delay"
-        let nodeId = nodes.first(where: { $0.name == nodeName })?.id
+        let encodedNodeName = nodeName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? nodeName
+        guard var request = makeRequest(path: "proxies/\(encodedNodeName)/delay") else { return }
         
-        guard var components = URLComponents(string: urlString) else { return }
-        
-        // 获取设置中的测试 URL
-        let settingsViewModel = SettingsViewModel()
-        await settingsViewModel.fetchConfig(server: server)
-        let testUrl = settingsViewModel.testUrl
-        
-        components.queryItems = [
-            URLQueryItem(name: "url", value: testUrl),
+        var components = URLComponents(url: request.url!, resolvingAgainstBaseURL: true)
+        components?.queryItems = [
+            URLQueryItem(name: "url", value: settingsViewModel.testUrl),
             URLQueryItem(name: "timeout", value: "2000")
         ]
         
-        guard let url = components.url else { return }
+        guard let finalUrl = components?.url else { return }
+        request.url = finalUrl
         
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        // 添加测试状态
-        if let nodeId = nodeId {
-            await MainActor.run {
-                testingNodes.insert(nodeId)
-            }
+        _ = await MainActor.run {
+            testingNodes.insert(nodeName)
         }
         
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             if let delay = try? JSONDecoder().decode([String: Int].self, from: data).values.first {
-                await MainActor.run {
+                _ = await MainActor.run {
                     updateNodeDelay(nodeName: nodeName, delay: delay)
-                    if let nodeId = nodeId {
-                        testingNodes.remove(nodeId)
-                    }
+                    testingNodes.remove(nodeName)
                 }
             }
         } catch {
-            if let nodeId = nodeId {
-                await MainActor.run {
-                    testingNodes.remove(nodeId)
-                }
+            _ = await MainActor.run {
+                testingNodes.remove(nodeName)
             }
+            handleNetworkError(error)
         }
     }
     
@@ -438,30 +419,36 @@ class ProxyViewModel: ObservableObject {
     // 添加一个公开的组测速方法
     @MainActor
     func testGroupSpeed(groupName: String) async {
-        let urlString = "http://\(server.url):\(server.port)/group/\(groupName)/delay"
-        guard var components = URLComponents(string: urlString) else { return }
+        let encodedGroupName = groupName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? groupName
+        guard var request = makeRequest(path: "group/\(encodedGroupName)/delay") else { return }
         
-        components.queryItems = [
-            URLQueryItem(name: "url", value: "https://www.gstatic.com/generate_204"),
+        var components = URLComponents(url: request.url!, resolvingAgainstBaseURL: true)
+        components?.queryItems = [
+            URLQueryItem(name: "url", value: settingsViewModel.testUrl),
             URLQueryItem(name: "timeout", value: "2000")
         ]
         
-        guard let url = components.url else { return }
-        
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        guard let finalUrl = components?.url else { return }
+        request.url = finalUrl
         
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            if let delays = try? JSONDecoder().decode([String: Int].self, from: data) {
-                // 更新所有节点的延迟
-                for (nodeName, delay) in delays {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            // 检查 HTTPS 响应
+            if server.useSSL,
+               let httpsResponse = response as? HTTPURLResponse,
+               httpsResponse.statusCode == 400 {
+                print("SSL 连接失败，服务器可能不支持 HTTPS")
+                return
+            }
+            
+            if let decodedData = try? JSONDecoder().decode([String: Int].self, from: data) {
+                for (nodeName, delay) in decodedData {
                     updateNodeDelay(nodeName: nodeName, delay: delay)
                 }
             }
         } catch {
-            print("Error testing group speed: \(error)")
+            handleNetworkError(error)
         }
     }
 }
