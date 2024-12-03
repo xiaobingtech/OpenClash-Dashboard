@@ -8,8 +8,9 @@ struct ClashServer: Identifiable, Codable {
     var secret: String
     var status: ServerStatus
     var version: String?
+    var useSSL: Bool
     
-    init(id: UUID = UUID(), name: String = "", url: String = "", port: String = "", secret: String = "", status: ServerStatus = .unknown, version: String? = nil) {
+    init(id: UUID = UUID(), name: String = "", url: String = "", port: String = "", secret: String = "", status: ServerStatus = .unknown, version: String? = nil, useSSL: Bool = false) {
         self.id = id
         self.name = name
         self.url = url
@@ -17,6 +18,7 @@ struct ClashServer: Identifiable, Codable {
         self.secret = secret
         self.status = status
         self.version = version
+        self.useSSL = useSSL
     }
     
     var displayName: String {
@@ -27,8 +29,9 @@ struct ClashServer: Identifiable, Codable {
     }
     
     var baseURL: URL? {
-        let urlString = url.hasPrefix("http") ? url : "http://\(url)"
-        return URL(string: "\(urlString):\(port)")
+        let cleanURL = url.replacingOccurrences(of: "^https?://", with: "", options: .regularExpression)
+        let scheme = useSSL ? "https" : "http"
+        return URL(string: "\(scheme)://\(cleanURL):\(port)")
     }
     
     var proxyProvidersURL: URL? {
@@ -37,13 +40,37 @@ struct ClashServer: Identifiable, Codable {
     
     func makeRequest(url: URL?) throws -> URLRequest {
         guard let url = url else {
-            throw URLError(.badURL)
+            throw NetworkError.invalidURL
         }
         
         var request = URLRequest(url: url)
         request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 10
         return request
+    }
+    
+    static func handleNetworkError(_ error: Error) -> NetworkError {
+        switch error {
+        case let urlError as URLError:
+            switch urlError.code {
+            case .timedOut, .cannotConnectToHost, .networkConnectionLost:
+                return .serverUnreachable
+            case .secureConnectionFailed, .serverCertificateHasBadDate,
+                 .serverCertificateUntrusted, .serverCertificateNotYetValid:
+                return .sslError
+            case .badServerResponse, .cannotParseResponse:
+                return .invalidResponse
+            case .userAuthenticationRequired:
+                return .unauthorized
+            default:
+                return .unknownError(error)
+            }
+        case let networkError as NetworkError:
+            return networkError
+        default:
+            return .unknownError(error)
+        }
     }
 }
 

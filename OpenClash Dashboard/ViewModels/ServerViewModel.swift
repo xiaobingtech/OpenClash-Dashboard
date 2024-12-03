@@ -2,11 +2,10 @@ import Foundation
 
 @MainActor
 class ServerViewModel: ObservableObject {
-    @Published var servers: [ClashServer] {
-        didSet {
-            saveServers()
-        }
-    }
+    @Published var servers: [ClashServer] = []
+    @Published var errorMessage: String?
+    @Published var errorDetails: String?
+    @Published var showError = false
     
     init() {
         self.servers = ServerViewModel.loadServers()
@@ -46,45 +45,46 @@ class ServerViewModel: ObservableObject {
         servers.removeAll { $0.id == server.id }
     }
     
-    struct VersionResponse: Codable {
-        let meta: Bool
-        let version: String
-    }
-    
     func checkServerStatus(_ server: ClashServer) async {
-        guard let serverIndex = servers.firstIndex(where: { $0.id == server.id }) else { return }
-        
-        guard let url = URL(string: "http://\(server.url):\(server.port)/version") else {
-            servers[serverIndex].status = .error
-            return
-        }
-        
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 5
-        if !server.secret.isEmpty {
-            request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
-        }
-        
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse else {
-                servers[serverIndex].status = .error
-                return
+            guard let versionURL = server.baseURL?.appendingPathComponent("version") else {
+                throw NetworkError.invalidURL
             }
             
-            switch httpResponse.statusCode {
-            case 200:
-                if let versionInfo = try? JSONDecoder().decode(VersionResponse.self, from: data) {
-                    servers[serverIndex].status = .ok
-                    servers[serverIndex].version = versionInfo.version
+            let request = try server.makeRequest(url: versionURL)
+            let (_, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw NetworkError.invalidResponse
+            }
+            
+            await MainActor.run {
+                var updatedServer = server
+                switch httpResponse.statusCode {
+                case 200:
+                    updatedServer.status = .ok
+                case 401:
+                    updatedServer.status = .unauthorized
+                default:
+                    updatedServer.status = .error
                 }
-            case 401:
-                servers[serverIndex].status = .unauthorized
-            default:
-                servers[serverIndex].status = .error
+                if let index = servers.firstIndex(where: { $0.id == server.id }) {
+                    servers[index] = updatedServer
+                }
             }
         } catch {
-            servers[serverIndex].status = .error
+            await MainActor.run {
+                let networkError = ClashServer.handleNetworkError(error)
+                errorMessage = networkError.errorDescription
+                errorDetails = networkError.recoverySuggestion
+                showError = true
+                
+                if let index = servers.firstIndex(where: { $0.id == server.id }) {
+                    var updatedServer = server
+                    updatedServer.status = .error
+                    servers[index] = updatedServer
+                }
+            }
         }
     }
     

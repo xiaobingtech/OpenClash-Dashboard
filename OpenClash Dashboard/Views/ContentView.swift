@@ -124,6 +124,15 @@ struct ContentView: View {
             .refreshable {
                 await viewModel.checkAllServersStatus()
             }
+            .alert("连接错误", isPresented: $viewModel.showError) {
+                Button("确定", role: .cancel) {}
+            } message: {
+                if let details = viewModel.errorDetails {
+                    Text("\(viewModel.errorMessage ?? "")\n\n\(details)")
+                } else {
+                    Text(viewModel.errorMessage ?? "")
+                }
+            }
         }
     }
 }
