@@ -78,6 +78,7 @@ class ProxyViewModel: ObservableObject {
     @Published var nodes: [ProxyNode] = []
     @Published var providerNodes: [String: [ProxyNode]] = [:]
     @Published var testingNodes: Set<String> = []
+    @Published var lastUpdated = Date()
     
     private let server: ClashServer
     private var currentTask: Task<Void, Never>?
@@ -195,6 +196,9 @@ class ProxyViewModel: ObservableObject {
                     return nil
                 }
                 
+                // 7. 触发 objectWillChange 通知
+                objectWillChange.send()
+                
                 print("数据更新完成:")
                 print("- Provider 数量:", self.providers.count)
                 print("- Provider 名称:", self.providers.map { $0.name })
@@ -202,24 +206,7 @@ class ProxyViewModel: ObservableObject {
                 print("- 节点数量:", self.nodes.count)
                 
             } catch {
-                if let urlError = error as? URLError {
-                    switch urlError.code {
-                    case .secureConnectionFailed:
-                        print("SSL 连接失败：服务器的 SSL 证书无效")
-                    case .serverCertificateHasBadDate:
-                        print("SSL 错误：服务器证书已过期")
-                    case .serverCertificateUntrusted:
-                        print("SSL 错误：服务器证书不受信任")
-                    case .serverCertificateNotYetValid:
-                        print("SSL 错误：服务器证书尚未生效")
-                    case .cannotConnectToHost:
-                        print("无法连接到服务器：\(server.useSSL ? "HTTPS" : "HTTP") 连接失败")
-                    default:
-                        print("网络错误：\(urlError.localizedDescription)")
-                    }
-                } else {
-                    print("其他错误：\(error.localizedDescription)")
-                }
+                handleNetworkError(error)
             }
         }
     }
@@ -280,7 +267,7 @@ class ProxyViewModel: ObservableObject {
         if let urlError = error as? URLError {
             switch urlError.code {
             case .secureConnectionFailed:
-                print("SSL 连接失败：服务器的 SSL 证书无效")
+                print("SSL 连接失败：服务器的 SSL 证书无��")
             case .serverCertificateHasBadDate:
                 print("SSL 错误：服务器证书已过期")
             case .serverCertificateUntrusted:
@@ -451,6 +438,40 @@ class ProxyViewModel: ObservableObject {
             handleNetworkError(error)
         }
     }
+    
+    @MainActor
+    func updateProxyProvider(providerName: String) async {
+        let encodedProviderName = providerName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? providerName
+        guard var request = makeRequest(path: "providers/proxies/\(encodedProviderName)") else { return }
+        
+        request.httpMethod = "PUT"
+        
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            
+            if server.useSSL,
+               let httpsResponse = response as? HTTPURLResponse,
+               httpsResponse.statusCode == 400 {
+                print("SSL 连接失败，服务器可能不支持 HTTPS")
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse,
+               (200...299).contains(httpResponse.statusCode) {
+                print("代理提供者 \(providerName) 更新成功")
+                
+                // 更新时间戳触发视图刷新
+                self.lastUpdated = Date()
+                
+                // 获取最新数据
+                await fetchProxies()
+            } else {
+                print("代理提供者 \(providerName) 更新失败")
+            }
+        } catch {
+            handleNetworkError(error)
+        }
+    }
 }
 
 // API 响应模型
@@ -466,4 +487,21 @@ struct ProxyDetail: Codable {
     let all: [String]?
     let history: [ProxyHistory]
     let id: String?
+}
+
+// 添加 ProviderResponse 结构体
+struct ProviderResponse: Codable {
+    let type: String
+    let vehicleType: String
+    let proxies: [ProxyInfo]?
+    let testUrl: String?
+    let subscriptionInfo: SubscriptionInfo?
+    let updatedAt: String?
+}
+
+struct ProxyInfo: Codable {
+    let name: String
+    let type: String
+    let alive: Bool
+    let history: [ProxyHistory]
 } 

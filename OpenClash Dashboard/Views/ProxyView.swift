@@ -21,11 +21,6 @@ struct ProxyView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .padding(.top, 100)
                     } else {
-                        // Text("Proxy Groups")
-                        //     .font(.headline)
-                        //     .frame(maxWidth: .infinity, alignment: .leading)
-                        //     .padding(.horizontal)
-                        
                         // 代理组列表
                         LazyVStack(spacing: 12) {
                             ForEach(viewModel.groups.sorted(by: { $0.name < $1.name }), id: \.name) { group in
@@ -53,7 +48,7 @@ struct ProxyView: View {
                                 ForEach(viewModel.providers.sorted(by: { $0.name < $1.name })) { provider in
                                     if let nodes = viewModel.providerNodes[provider.name] {
                                         ProxyProviderCard(provider: provider, nodes: nodes, viewModel: viewModel)
-                                            .id(provider.name)
+                                            .id("\(provider.name)-\(provider.updatedAt ?? "")-\(viewModel.lastUpdated.timeIntervalSince1970)")
                                     }
                                 }
                             }
@@ -71,16 +66,11 @@ struct ProxyView: View {
             }
             .refreshable {
                 print("开始下拉刷新")
-                // 开始刷新动画
                 withAnimation {
                     isRefreshing = true
                 }
-                
-                // 刷新代理数据
                 await viewModel.fetchProxies()
                 print("下拉刷新完成")
-                
-                // 结束刷新动画
                 withAnimation {
                     isRefreshing = false
                 }
@@ -156,17 +146,12 @@ struct ProxyView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     Task {
-                        // 开始刷新动画
                         await MainActor.run {
                             withAnimation {
                                 isRefreshing = true
                             }
                         }
-                        
-                        // 只刷新代理数据，不进行延迟测试
                         await viewModel.fetchProxies()
-                        
-                        // 结束刷新动画
                         await MainActor.run {
                             withAnimation {
                                 isRefreshing = false
@@ -528,6 +513,8 @@ struct ProxyProviderCard: View {
     let provider: Provider
     let nodes: [ProxyNode]
     @State private var isExpanded = false
+    @State private var isUpdating = false
+    @State private var lastUpdatedTime: String = ""
     @ObservedObject var viewModel: ProxyViewModel
     
     var body: some View {
@@ -553,13 +540,25 @@ struct ProxyProviderCard: View {
                 }
                 
                 Button {
-                    // 更新操作
+                    Task {
+                        isUpdating = true
+                        await viewModel.updateProxyProvider(providerName: provider.name)
+                        isUpdating = false
+                    }
                 } label: {
                     Image(systemName: "arrow.clockwise")
+                        .rotationEffect(.degrees(isUpdating ? 360 : 0))
+                        .animation(isUpdating ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isUpdating)
                 }
+                .disabled(isUpdating)
                 
                 Button {
-                    // 测速操作
+                    Task {
+                        // 测速操作
+                        if let providerNodes = viewModel.providerNodes[provider.name] {
+                            await viewModel.testGroupDelay(groupName: provider.name, nodes: providerNodes)
+                        }
+                    }
                 } label: {
                     Image(systemName: "bolt")
                 }
@@ -573,6 +572,7 @@ struct ProxyProviderCard: View {
                         .rotationEffect(isExpanded ? .degrees(180) : .degrees(0))
                 }
             }
+            
             HStack {
                 if let info = provider.subscriptionInfo,
                    let expire = formatExpireDate(info.expire) {
@@ -584,7 +584,7 @@ struct ProxyProviderCard: View {
                 Spacer()
                 
                 if let updatedAt = provider.updatedAt {
-                    Text("更新时间: \(formatDate(updatedAt))")
+                    Text("更新时间: \(lastUpdatedTime.isEmpty ? formatDate(updatedAt) : lastUpdatedTime)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -593,18 +593,12 @@ struct ProxyProviderCard: View {
             if isExpanded {
                 Divider()
                 
-                
                 // 显示节点列表
                 VStack(alignment: .leading, spacing: 8) {
-                    // Text("节点列表")
-                    //     .font(.caption)
-                    //     .foregroundStyle(.secondary)
-                    //     .padding(.top, 4)
-                    
                     ForEach(nodes) { node in
                         HStack {
                             Circle()
-                                .fill(node.delay > 0 ? .green : .gray)
+                                .fill(getNodeStatusColor(delay: node.delay))
                                 .frame(width: 8, height: 8)
                             
                             Text(node.name)
@@ -612,7 +606,10 @@ struct ProxyProviderCard: View {
                             
                             Spacer()
                             
-                            if node.delay > 0 {
+                            if viewModel.testingNodes.contains(node.name) {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                            } else if node.delay > 0 {
                                 Text("\(node.delay) ms")
                                     .font(.caption)
                                     .foregroundStyle(getDelayTextColor(delay: node.delay))
@@ -640,6 +637,28 @@ struct ProxyProviderCard: View {
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
+        .onChange(of: provider.updatedAt) { newValue in
+            if let updatedAt = newValue {
+                lastUpdatedTime = formatDate(updatedAt)
+            }
+        }
+        .onAppear {
+            if let updatedAt = provider.updatedAt {
+                lastUpdatedTime = formatDate(updatedAt)
+            }
+        }
+    }
+    
+    private func getNodeStatusColor(delay: Int) -> Color {
+        if delay == 0 {
+            return .gray
+        } else if delay < 200 {
+            return .green
+        } else if delay < 400 {
+            return .yellow
+        } else {
+            return .orange
+        }
     }
     
     private func formatBytes(_ bytes: Int64) -> String {
