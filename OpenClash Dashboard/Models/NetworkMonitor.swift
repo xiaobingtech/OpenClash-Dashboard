@@ -74,11 +74,17 @@ class NetworkMonitor: ObservableObject {
         server = nil
     }
     
+    private func getWebSocketURL(for path: String, server: ClashServer) -> URL? {
+        let scheme = server.useSSL ? "wss" : "ws"
+        let urlString = "\(scheme)://\(server.url):\(server.port)/\(path)"
+        return URL(string: urlString)
+    }
+    
     private func connectToTraffic(server: ClashServer) {
-        guard let url = URL(string: "ws://\(server.url):\(server.port)/traffic") else { return }
+        guard let url = getWebSocketURL(for: "traffic", server: server) else { return }
         guard !isConnected[.traffic, default: false] else { return }
         
-        print("正在连接 Traffic WebSocket...")
+        print("正在连接 Traffic WebSocket (\(url.absoluteString))...")
         
         var request = URLRequest(url: url)
         if !server.secret.isEmpty {
@@ -91,10 +97,10 @@ class NetworkMonitor: ObservableObject {
     }
     
     private func connectToMemory(server: ClashServer) {
-        guard let url = URL(string: "ws://\(server.url):\(server.port)/memory") else { return }
+        guard let url = getWebSocketURL(for: "memory", server: server) else { return }
         guard !isConnected[.memory, default: false] else { return }
         
-        print("正在连接 Memory WebSocket...")
+        print("正在连接 Memory WebSocket (\(url.absoluteString))...")
         
         var request = URLRequest(url: url)
         if !server.secret.isEmpty {
@@ -107,10 +113,10 @@ class NetworkMonitor: ObservableObject {
     }
     
     private func connectToConnections(server: ClashServer) {
-        guard let url = URL(string: "ws://\(server.url):\(server.port)/connections") else { return }
+        guard let url = getWebSocketURL(for: "connections", server: server) else { return }
         guard !isConnected[.connections, default: false] else { return }
         
-        print("正在连接 Connections WebSocket...")
+        print("正在连接 Connections WebSocket (\(url.absoluteString))...")
         
         var request = URLRequest(url: url)
         if !server.secret.isEmpty {
@@ -120,6 +126,25 @@ class NetworkMonitor: ObservableObject {
         connectionsTask = session.webSocketTask(with: request)
         connectionsTask?.resume()
         receiveConnectionsData()
+    }
+    
+    private func handleWebSocketError(_ error: Error, type: ConnectionType) {
+        print("\(type.rawValue) WebSocket 错误: \(error.localizedDescription)")
+        
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .secureConnectionFailed, .serverCertificateHasBadDate,
+                 .serverCertificateUntrusted, .serverCertificateNotYetValid:
+                print("SSL/TLS 错误: \(urlError.localizedDescription)")
+            case .notConnectedToInternet:
+                print("网络连接已断开")
+            default:
+                print("其他错误: \(urlError.localizedDescription)")
+            }
+        }
+        
+        isConnected[type] = false
+        retryConnection(type: type)
     }
     
     private func receiveTrafficData() {
@@ -146,9 +171,7 @@ class NetworkMonitor: ObservableObject {
                 self.receiveTrafficData() // 继续接收数据
                 
             case .failure(let error):
-                print("Traffic WebSocket 错误: \(error)")
-                self.isConnected[.traffic] = false
-                self.retryConnection(type: .traffic)
+                self.handleWebSocketError(error, type: .traffic)
             }
         }
     }
@@ -177,9 +200,7 @@ class NetworkMonitor: ObservableObject {
                 self.receiveMemoryData() // 继续接收数据
                 
             case .failure(let error):
-                print("Memory WebSocket 错误: \(error)")
-                self.isConnected[.memory] = false
-                self.retryConnection(type: .memory)
+                self.handleWebSocketError(error, type: .memory)
             }
         }
     }
@@ -208,9 +229,7 @@ class NetworkMonitor: ObservableObject {
                 self.receiveConnectionsData() // 继续接收数据
                 
             case .failure(let error):
-                print("Connections WebSocket 错误: \(error)")
-                self.isConnected[.connections] = false
-                self.retryConnection(type: .connections)
+                self.handleWebSocketError(error, type: .connections)
             }
         }
     }
