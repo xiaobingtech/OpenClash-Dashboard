@@ -225,7 +225,7 @@ struct ConnectionsView: View {
                     }
             }
         }
-        .alert("确��清理已断开连接", isPresented: $showClearClosedConfirmation) {
+        .alert("确定清理已断开连接", isPresented: $showClearClosedConfirmation) {
             Button("取消", role: .cancel) { }
             Button("清理", role: .destructive) {
                 viewModel.clearClosedConnections()

@@ -151,7 +151,9 @@ class ConnectionsViewModel: ObservableObject {
         reconnectTask?.cancel()
         reconnectTask = nil
         
-        guard let url = URL(string: "ws://\(server.url):\(server.port)/connections") else {
+        // 构建 WebSocket URL，支持 SSL
+        let scheme = server.useSSL ? "wss" : "ws"
+        guard let url = URL(string: "\(scheme)://\(server.url):\(server.port)/connections") else {
             log("❌ URL 构建失败")
             DispatchQueue.main.async { [weak self] in
                 self?.connectionState = .error("URL 构建失败")
@@ -160,14 +162,27 @@ class ConnectionsViewModel: ObservableObject {
         }
         
         // 先测试 HTTP 连接
-        var testRequest = URLRequest(url: URL(string: "http://\(server.url):\(server.port)")!)
+        let httpScheme = server.useSSL ? "https" : "http"
+        var testRequest = URLRequest(url: URL(string: "\(httpScheme)://\(server.url):\(server.port)")!)
         if !server.secret.isEmpty {
             testRequest.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
         }
         
+        // 如果使用 SSL，添加额外的配置
+        let sessionConfig = URLSessionConfiguration.default
+        if server.useSSL {
+            sessionConfig.urlCache = nil // 禁用缓存
+            sessionConfig.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            // 允许自签名证书
+            sessionConfig.tlsMinimumSupportedProtocolVersion = .TLSv12
+            sessionConfig.tlsMaximumSupportedProtocolVersion = .TLSv13
+        }
+        
         Task {
             do {
-                let (_, response) = try await URLSession.shared.data(for: testRequest)
+                let session = URLSession(configuration: sessionConfig)
+                let (_, response) = try await session.data(for: testRequest)
+                
                 if let httpResponse = response as? HTTPURLResponse {
                     log("✅ HTTP 连接测试状态码: \(httpResponse.statusCode)")
                     
@@ -192,7 +207,8 @@ class ConnectionsViewModel: ObservableObject {
                 connectionsTask = nil
                 
                 // 创建新连接
-                let task = session.webSocketTask(with: request)
+                let wsSession = URLSession(configuration: sessionConfig)
+                let task = wsSession.webSocketTask(with: request)
                 connectionsTask = task
                 
                 // 设置消息处理
@@ -200,7 +216,7 @@ class ConnectionsViewModel: ObservableObject {
                 receiveConnectionsData()
                 
             } catch {
-                log("❌ HTTP 连测试失败: \(error.localizedDescription)")
+                log("❌ HTTP 连接测试失败: \(error.localizedDescription)")
                 handleConnectionError(error)
             }
         }
@@ -211,6 +227,28 @@ class ConnectionsViewModel: ObservableObject {
         
         DispatchQueue.main.async { [weak self] in
             self?.connectionState = .error(error.localizedDescription)
+        }
+        
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .secureConnectionFailed:
+                log("❌ SSL/TLS 连接失败")
+                DispatchQueue.main.async { [weak self] in
+                    self?.connectionState = .error("SSL/TLS 连接失败，请检查证书配置")
+                }
+            case .serverCertificateUntrusted:
+                log("❌ 服务器证书不受信任")
+                DispatchQueue.main.async { [weak self] in
+                    self?.connectionState = .error("服务器证书不受信任")
+                }
+            case .clientCertificateRejected:
+                log("❌ 客户端证书被拒绝")
+                DispatchQueue.main.async { [weak self] in
+                    self?.connectionState = .error("客户端证书被拒绝")
+                }
+            default:
+                break
+            }
         }
     }
     
@@ -384,45 +422,47 @@ class ConnectionsViewModel: ObservableObject {
         }
     }
     
-    func refresh() async {
-        stopMonitoring()
-        if let server = server {
-            startMonitoring(server: server)
+    private func makeRequest(path: String, method: String = "GET") -> URLRequest? {
+        let scheme = server?.useSSL == true ? "https" : "http"
+        guard let server = server,
+              let url = URL(string: "\(scheme)://\(server.url):\(server.port)/\(path)") else {
+            return nil
         }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        
+        // 添加通用请求头
+        if !server.secret.isEmpty {
+            request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+        }
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        return request
+    }
+    
+    private func makeSession() -> URLSession {
+        let config = URLSessionConfiguration.default
+        if server?.useSSL == true {
+            config.urlCache = nil
+            config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            config.tlsMinimumSupportedProtocolVersion = .TLSv12
+            config.tlsMaximumSupportedProtocolVersion = .TLSv13
+        }
+        return URLSession(configuration: config)
     }
     
     func closeConnection(_ id: String) {
-        guard let server = server else { return }
-        
-        let urlString = "http://\(server.url):\(server.port)/connections/\(id)"
-        guard let url = URL(string: urlString) else { return }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        
-        // 添加所有必要的请求头
-        request.setValue("*/*", forHTTPHeaderField: "Accept")
-        request.setValue("en-US,en;q=0.9,zh-CN;q=0.8,zh-TW;q=0.7,zh;q=0.6", forHTTPHeaderField: "Accept-Language")
-        request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
-        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
-        request.setValue("keep-alive", forHTTPHeaderField: "Connection")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("1", forHTTPHeaderField: "DNT")
-        request.setValue("http://\(server.url):\(server.port)", forHTTPHeaderField: "Origin")
-        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
-        request.setValue("http://\(server.url):\(server.port)/ui/yacd/?hostname=\(server.url)&port=\(server.port)&secret=\(server.secret)", forHTTPHeaderField: "Referer")
-        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        guard let request = makeRequest(path: "connections/\(id)", method: "DELETE") else { return }
         
         Task {
             do {
-                let (_, response) = try await URLSession.shared.data(for: request)
+                let (_, response) = try await makeSession().data(for: request)
                 if let httpResponse = response as? HTTPURLResponse,
                    httpResponse.statusCode == 204 {
-                    // 不再调用 refresh()，而是直接在本地更新连接状态
                     await MainActor.run {
                         if let index = connections.firstIndex(where: { $0.id == id }) {
                             var updatedConnection = connections[index]
-                            // 创建一个新的连接对象，将 isAlive 设置为 false
                             connections[index] = ClashConnection(
                                 id: updatedConnection.id,
                                 metadata: updatedConnection.metadata,
@@ -440,21 +480,34 @@ class ConnectionsViewModel: ObservableObject {
                     }
                 }
             } catch {
-                print("Error closing connection: \(error)")
+                log("❌ 关闭连接失败: \(error.localizedDescription)")
             }
         }
     }
     
-    func formatBytes(_ bytes: Int) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .binary
-        return formatter.string(fromByteCount: Int64(bytes))
+    func closeAllConnections() {
+        guard let request = makeRequest(path: "connections", method: "DELETE") else { return }
+        
+        Task {
+            do {
+                let (_, response) = try await makeSession().data(for: request)
+                if let httpResponse = response as? HTTPURLResponse,
+                   httpResponse.statusCode == 204 {
+                    await MainActor.run {
+                        // 清空所有连接相关的数据
+                        connections.removeAll()
+                        previousConnections.removeAll()
+                    }
+                }
+            } catch {
+                log("❌ 关闭所有连接失败: \(error.localizedDescription)")
+            }
+        }
     }
     
-    func toggleMonitoring() {
-        if isMonitoring {
-            stopMonitoring()
-        } else if let server = server {
+    func refresh() async {
+        stopMonitoring()
+        if let server = server {
             startMonitoring(server: server)
         }
     }
@@ -489,7 +542,11 @@ class ConnectionsViewModel: ObservableObject {
         
         if errorTracker.recordError() {
             DispatchQueue.main.async { [weak self] in
-                self?.connectionState = .error("连接失败，请检查网络或服务器状态")
+                if let urlError = error as? URLError, urlError.code == .secureConnectionFailed {
+                    self?.connectionState = .error("SSL/TLS 连接失败，请检查证书配置")
+                } else {
+                    self?.connectionState = .error("连接失败，请检查网络或服务器状态")
+                }
             }
             stopMonitoring()
         } else {
@@ -575,36 +632,17 @@ class ConnectionsViewModel: ObservableObject {
         }
     }
     
-    func closeAllConnections() {
-        guard let server = server else { return }
-        
-        let urlString = "http://\(server.url):\(server.port)/connections"
-        guard let url = URL(string: urlString) else { return }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        
-        // 添加必要的请求头
-        request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
-        request.setValue("http://\(server.url):\(server.port)/ui/yacd/?hostname=\(server.url)&port=\(server.port)&secret=\(server.secret)", forHTTPHeaderField: "Referer")
-        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
-        request.setValue("1", forHTTPHeaderField: "DNT")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        Task {
-            do {
-                let (_, response) = try await URLSession.shared.data(for: request)
-                if let httpResponse = response as? HTTPURLResponse,
-                   httpResponse.statusCode == 204 {
-                    await MainActor.run {
-                        // 清空所有连接相关的数据
-                        connections.removeAll()
-                        previousConnections.removeAll() // 同时清空历史记录
-                    }
-                }
-            } catch {
-                print("Error closing all connections: \(error)")
-            }
+    func formatBytes(_ bytes: Int) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .binary
+        return formatter.string(fromByteCount: Int64(bytes))
+    }
+    
+    func toggleMonitoring() {
+        if isMonitoring {
+            stopMonitoring()
+        } else if let server = server {
+            startMonitoring(server: server)
         }
     }
 } 
