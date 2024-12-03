@@ -33,6 +33,46 @@ class LogViewModel: ObservableObject {
         }
     }
     
+    private func makeWebSocketRequest(server: ClashServer) -> URLRequest? {
+        var components = URLComponents()
+        components.scheme = server.useSSL ? "wss" : "ws"
+        components.host = server.url
+        components.port = Int(server.port)
+        components.path = "/logs"
+        components.queryItems = [
+            URLQueryItem(name: "token", value: server.secret),
+            URLQueryItem(name: "level", value: logLevel)
+        ]
+        
+        guard let url = components.url else { return nil }
+        
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 5
+        
+        // WebSocket 必需的请求头
+        request.setValue("websocket", forHTTPHeaderField: "Upgrade")
+        request.setValue("Upgrade", forHTTPHeaderField: "Connection")
+        request.setValue("13", forHTTPHeaderField: "Sec-WebSocket-Version")
+        request.setValue("permessage-deflate; client_max_window_bits", forHTTPHeaderField: "Sec-WebSocket-Extensions")
+        
+        if !server.secret.isEmpty {
+            request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+        }
+        
+        return request
+    }
+    
+    private func makeSession(server: ClashServer) -> URLSession {
+        let config = URLSessionConfiguration.default
+        if server.useSSL {
+            config.urlCache = nil
+            config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            config.tlsMinimumSupportedProtocolVersion = .TLSv12
+            config.tlsMaximumSupportedProtocolVersion = .TLSv13
+        }
+        return URLSession(configuration: config)
+    }
+    
     func connect(to server: ClashServer) {
         guard !isReconnecting else { return }
         
@@ -43,41 +83,21 @@ class LogViewModel: ObservableObject {
         }
         
         connectionRetryCount += 1
-        
         currentServer = server
         
-        var components = URLComponents()
-        components.scheme = "ws"
-        components.host = server.url
-        components.port = Int(server.port)
-        components.path = "/logs"
-        components.queryItems = [
-            URLQueryItem(name: "token", value: server.secret),
-            URLQueryItem(name: "level", value: logLevel)
-        ]
-        
-        guard let url = components.url else { return }
-        
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 5
-        request.setValue("websocket", forHTTPHeaderField: "Upgrade")
-        request.setValue("Upgrade", forHTTPHeaderField: "Connection")
-        request.setValue("13", forHTTPHeaderField: "Sec-WebSocket-Version")
-        request.setValue("permessage-deflate; client_max_window_bits", forHTTPHeaderField: "Sec-WebSocket-Extensions")
-        
-        if !server.secret.isEmpty {
-            request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+        guard let request = makeWebSocketRequest(server: server) else {
+            print("❌ 无法创建 WebSocket 请求")
+            return
         }
         
+        // 使用支持 SSL 的会话
+        let session = makeSession(server: server)
         webSocketTask?.cancel()
         webSocketTask = session.webSocketTask(with: request)
         
-        // 添加一个 ping 任务来确认连接状态
         schedulePing()
-        
         webSocketTask?.resume()
         
-        // 连接建立时就更新状态
         DispatchQueue.main.async {
             self.isConnected = true
         }
@@ -125,23 +145,60 @@ class LogViewModel: ObservableObject {
         pingTask = task
     }
     
+    private func handleWebSocketError(_ error: Error) {
+        // 只在非取消错误时处理
+        guard !error.isCancellationError else { return }
+        
+        print("❌ WebSocket 错误: \(error.localizedDescription)")
+        
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .secureConnectionFailed:
+                print("❌ SSL/TLS 连接失败")
+                DispatchQueue.main.async { [weak self] in
+                    self?.isConnected = false
+                    // 不要在 SSL 错误时自动重连
+                    self?.connectionRetryCount = self?.maxRetryCount ?? 5
+                }
+            case .serverCertificateUntrusted:
+                print("❌ 服务器证书不受信任")
+                DispatchQueue.main.async { [weak self] in
+                    self?.isConnected = false
+                    self?.connectionRetryCount = self?.maxRetryCount ?? 5
+                }
+            default:
+                DispatchQueue.main.async { [weak self] in
+                    self?.isConnected = false
+                    // 其他错误允许重试
+                    if let self = self, self.connectionRetryCount < self.maxRetryCount {
+                        self.reconnect()
+                    }
+                }
+            }
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.isConnected = false
+                if let self = self, self.connectionRetryCount < self.maxRetryCount {
+                    self.reconnect()
+                }
+            }
+        }
+    }
+    
     private func receiveLog() {
         webSocketTask?.receive { [weak self] result in
             guard let self = self else { return }
             
             switch result {
             case .success(let message):
-                // 成功接收消息时更新连接状态
                 DispatchQueue.main.async {
                     self.isConnected = true
-                    self.connectionRetryCount = 0  // 重置重试计数
+                    self.connectionRetryCount = 0
                 }
                 
                 switch message {
                 case .string(let text):
-                    // 忽略 ping 消息
                     if text == "ping" {
-                        // 继续接收下一条消息
                         self.receiveLog()
                         return
                     }
@@ -153,30 +210,10 @@ class LogViewModel: ObservableObject {
                 @unknown default:
                     break
                 }
-                // 继续接收下一条消息
                 self.receiveLog()
                 
             case .failure(let error):
-                // 只在非取消错误时打印
-                if (error as NSError).code != NSURLErrorCancelled {
-                    print("❌ WebSocket 错误: \(error.localizedDescription)")
-                }
-                
-                DispatchQueue.main.async {
-                    // 只在确实断开连接时更新状态
-                    if self.webSocketTask != nil {
-                        self.isConnected = false
-                        // 3秒后重连，但要考虑重试次数
-                        if self.connectionRetryCount < self.maxRetryCount {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                                guard let self = self else { return }
-                                if let server = self.currentServer {
-                                    self.connect(to: server)
-                                }
-                            }
-                        }
-                    }
-                }
+                self.handleWebSocketError(error)
             }
         }
     }
