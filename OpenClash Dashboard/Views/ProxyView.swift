@@ -119,7 +119,7 @@ struct ProxyView: View {
                                         Button {
                                             showingJumpMenu = false
                                             withAnimation {
-                                                proxy.scrollTo(provider.name, anchor: .top)
+                                                proxy.scrollTo("\(provider.name)-\(provider.updatedAt ?? "")-\(viewModel.lastUpdated.timeIntervalSince1970)", anchor: .top)
                                             }
                                         } label: {
                                             HStack {
@@ -541,9 +541,13 @@ struct ProxyProviderCard: View {
                 
                 Button {
                     Task {
-                        isUpdating = true
+                        withAnimation {
+                            isUpdating = true
+                        }
                         await viewModel.updateProxyProvider(providerName: provider.name)
-                        isUpdating = false
+                        withAnimation {
+                            isUpdating = false
+                        }
                     }
                 } label: {
                     Image(systemName: "arrow.clockwise")
@@ -554,14 +558,12 @@ struct ProxyProviderCard: View {
                 
                 Button {
                     Task {
-                        // 测速操作
-                        if let providerNodes = viewModel.providerNodes[provider.name] {
-                            await viewModel.testGroupDelay(groupName: provider.name, nodes: providerNodes)
-                        }
+                        await viewModel.healthCheckProvider(providerName: provider.name)
                     }
                 } label: {
                     Image(systemName: "bolt")
                 }
+                .disabled(isUpdating)
                 
                 Button {
                     withAnimation {
@@ -606,28 +608,37 @@ struct ProxyProviderCard: View {
                             
                             Spacer()
                             
-                            if viewModel.testingNodes.contains(node.name) {
-                                ProgressView()
-                                    .scaleEffect(0.7)
-                            } else if node.delay > 0 {
-                                Text("\(node.delay) ms")
-                                    .font(.caption)
-                                    .foregroundStyle(getDelayTextColor(delay: node.delay))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(getDelayTextColor(delay: node.delay).opacity(0.1))
-                                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                            } else {
-                                Text("超时")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color.secondary.opacity(0.1))
-                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                            Button {
+                                Task {
+                                    await viewModel.healthCheckProviderProxy(
+                                        providerName: provider.name,
+                                        proxyName: node.name
+                                    )
+                                }
+                            } label: {
+                                Group {
+                                    if viewModel.testingNodes.contains(node.name) {
+                                        ProgressView()
+                                            .scaleEffect(0.7)
+                                    } else if node.delay > 0 {
+                                        Text("\(node.delay) ms")
+                                            .font(.caption)
+                                            .foregroundStyle(getDelayTextColor(delay: node.delay))
+                                    } else {
+                                        Text("超时")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
                             }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(node.delay > 0 ? getDelayTextColor(delay: node.delay).opacity(0.1) : Color.secondary.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
                         }
                         .padding(.vertical, 4)
+                        .id("\(node.name)-\(node.delay)-\(viewModel.testingNodes.contains(node.name))")
                     }
                 }
                 .padding(.top, 4)
@@ -637,6 +648,7 @@ struct ProxyProviderCard: View {
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
+        .id("\(provider.name)")
         .onChange(of: provider.updatedAt) { newValue in
             if let updatedAt = newValue {
                 lastUpdatedTime = formatDate(updatedAt)

@@ -63,13 +63,6 @@ struct SettingsView: View {
                         viewModel.updateConfig("allow-lan", value: newValue, server: server)
                     }
                 
-                HStack {
-                    Text("延迟测速 URL")
-                    Spacer()
-                    TextField("", text: $viewModel.testUrl)
-                        .multilineTextAlignment(.trailing)
-                }
-                
                 Picker("运行模式", selection: $viewModel.mode) {
                     Text("规则模式").tag("rule")
                     Text("全局模式").tag("global")

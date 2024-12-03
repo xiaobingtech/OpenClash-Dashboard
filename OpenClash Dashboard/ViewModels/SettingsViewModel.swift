@@ -10,16 +10,25 @@ class SettingsViewModel: ObservableObject {
     @Published var tunDevice: String = ""
     @Published var tunStack: String = "gVisor"
     @Published var interfaceName: String = ""
-    @Published var testUrl: String = "https://www.gstatic.com/"
     @Published var language: String = "zh-CN"
     @Published var tunAutoRoute: Bool = true
     @Published var tunAutoDetectInterface: Bool = true
     
-    func fetchConfig(server: ClashServer) {
-        guard let url = URL(string: "http://\(server.url):\(server.port)/configs") else { return }
+    private func makeRequest(path: String, server: ClashServer) -> URLRequest? {
+        let scheme = server.useSSL ? "https" : "http"
+        guard let url = URL(string: "\(scheme)://\(server.url):\(server.port)/\(path)") else {
+            print("无效的 URL")
+            return nil
+        }
         
         var request = URLRequest(url: url)
         request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        return request
+    }
+    
+    func fetchConfig(server: ClashServer) {
+        guard let request = makeRequest(path: "configs", server: server) else { return }
         
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let data = data else { return }
@@ -47,23 +56,17 @@ class SettingsViewModel: ObservableObject {
     }
     
     func updateConfig(_ path: String, value: Any, server: ClashServer) {
-        guard let url = URL(string: "http://\(server.url):\(server.port)/configs") else { return }
+        guard var request = makeRequest(path: "configs", server: server) else { return }
         
-        var request = URLRequest(url: url)
         request.httpMethod = "PATCH"
-        request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
         let payload = [path: value]
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
         
         URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
             if let httpResponse = response as? HTTPURLResponse,
                (200...299).contains(httpResponse.statusCode) {
-                // 更新成功
                 print("设置更新成功：\(path) = \(value)")
             } else if let error = error {
-                // 只在真正发生错误时打印
                 print("设置更新失败：\(path) = \(value)")
                 print("错误：\(error.localizedDescription)")
             }

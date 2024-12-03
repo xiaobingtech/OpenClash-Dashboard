@@ -79,10 +79,12 @@ class ProxyViewModel: ObservableObject {
     @Published var providerNodes: [String: [ProxyNode]] = [:]
     @Published var testingNodes: Set<String> = []
     @Published var lastUpdated = Date()
+    @Published var lastDelayTestTime = Date()
     
     private let server: ClashServer
     private var currentTask: Task<Void, Never>?
     private let settingsViewModel = SettingsViewModel()
+    private let defaultTestUrl = "http://www.gstatic.com/generate_204"
     
     init(server: ClashServer) {
         self.server = server
@@ -224,7 +226,7 @@ class ProxyViewModel: ObservableObject {
             
             var components = URLComponents(url: request.url!, resolvingAgainstBaseURL: true)
             components?.queryItems = [
-                URLQueryItem(name: "url", value: settingsViewModel.testUrl),
+                URLQueryItem(name: "url", value: defaultTestUrl),
                 URLQueryItem(name: "timeout", value: "2000")
             ]
             
@@ -267,7 +269,7 @@ class ProxyViewModel: ObservableObject {
         if let urlError = error as? URLError {
             switch urlError.code {
             case .secureConnectionFailed:
-                print("SSL 连接失败：服务器的 SSL 证书无��")
+                print("SSL 连接失败：服务器的 SSL 证书无")
             case .serverCertificateHasBadDate:
                 print("SSL 错误：服务器证书已过期")
             case .serverCertificateUntrusted:
@@ -317,14 +319,14 @@ class ProxyViewModel: ObservableObject {
         }
     }
     
-    // 添加新方法用于测试单个节点延迟
+    // 添加新方用于测试单个节点延迟
     private func testNodeDelay(nodeName: String) async {
         let encodedNodeName = nodeName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? nodeName
         guard var request = makeRequest(path: "proxies/\(encodedNodeName)/delay") else { return }
         
         var components = URLComponents(url: request.url!, resolvingAgainstBaseURL: true)
         components?.queryItems = [
-            URLQueryItem(name: "url", value: settingsViewModel.testUrl),
+            URLQueryItem(name: "url", value: defaultTestUrl),
             URLQueryItem(name: "timeout", value: "2000")
         ]
         
@@ -361,7 +363,7 @@ class ProxyViewModel: ObservableObject {
                         id: node.id,
                         name: node.name,
                         type: node.type,
-                        alive: node.alive,
+                        alive: true,  // 如果有延迟数据，说明节点是活跃的
                         delay: delay,
                         history: node.history
                     )
@@ -377,13 +379,16 @@ class ProxyViewModel: ObservableObject {
                     id: node.id,
                     name: node.name,
                     type: node.type,
-                    alive: node.alive,
+                    alive: true,  // 如果有延迟数据，说明节点是活跃的
                     delay: delay,
                     history: node.history
                 )
             }
             return node
         }
+        
+        // 触发视图更新
+        objectWillChange.send()
     }
     
     @MainActor
@@ -411,7 +416,7 @@ class ProxyViewModel: ObservableObject {
         
         var components = URLComponents(url: request.url!, resolvingAgainstBaseURL: true)
         components?.queryItems = [
-            URLQueryItem(name: "url", value: settingsViewModel.testUrl),
+            URLQueryItem(name: "url", value: defaultTestUrl),
             URLQueryItem(name: "timeout", value: "2000")
         ]
         
@@ -460,15 +465,129 @@ class ProxyViewModel: ObservableObject {
                (200...299).contains(httpResponse.statusCode) {
                 print("代理提供者 \(providerName) 更新成功")
                 
-                // 更新时间戳触发视图刷新
-                self.lastUpdated = Date()
+                // 等待一小段时间确保服务器处理完成
+                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
                 
-                // 获取最新数据
-                await fetchProxies()
+                // 在主线程上更新
+                await MainActor.run {
+                    // 更新时间戳
+                    self.lastUpdated = Date()
+                    
+                    // 刷新数据
+                    Task {
+                        await self.fetchProxies()
+                    }
+                }
             } else {
                 print("代理提供者 \(providerName) 更新失败")
             }
         } catch {
+            handleNetworkError(error)
+        }
+    }
+    
+    // 代理提供者整体健康检查
+    @MainActor
+    func healthCheckProvider(providerName: String) async {
+        let encodedProviderName = providerName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? providerName
+        guard let request = makeRequest(path: "providers/proxies/\(encodedProviderName)/healthcheck") else { return }
+        
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            
+            if server.useSSL,
+               let httpsResponse = response as? HTTPURLResponse,
+               httpsResponse.statusCode == 400 {
+                print("SSL 连接失败，服务器可能不支持 HTTPS")
+                return
+            }
+            
+            // 等待一小段时间确保服务器处理完成
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
+            
+            // 在主线程上刷新数据
+            await MainActor.run {
+                Task {
+                    await self.fetchProxies()
+                    self.lastDelayTestTime = Date()
+                    objectWillChange.send()
+                }
+            }
+            
+        } catch {
+            handleNetworkError(error)
+        }
+    }
+    
+    // 代理提供者中单个节点的健康检查
+    @MainActor
+    func healthCheckProviderProxy(providerName: String, proxyName: String) async {
+        let encodedProviderName = providerName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? providerName
+        let encodedProxyName = proxyName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? proxyName
+        
+        guard var request = makeRequest(path: "providers/proxies/\(encodedProviderName)/\(encodedProxyName)/healthcheck") else { return }
+        
+        // 添加查询参数，使用默认测试 URL
+        var components = URLComponents(url: request.url!, resolvingAgainstBaseURL: true)
+        components?.queryItems = [
+            URLQueryItem(name: "url", value: defaultTestUrl),
+            URLQueryItem(name: "timeout", value: "5000")
+        ]
+        
+        guard let finalUrl = components?.url else { return }
+        request.url = finalUrl
+        
+        // 设置测试状态
+        await MainActor.run {
+            testingNodes.insert(proxyName)
+            objectWillChange.send()
+        }
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            if server.useSSL,
+               let httpsResponse = response as? HTTPURLResponse,
+               httpsResponse.statusCode == 400 {
+                print("SSL 连接失败，服务器可能不支持 HTTPS")
+                await MainActor.run {
+                    testingNodes.remove(proxyName)
+                    objectWillChange.send()
+                }
+                return
+            }
+            
+            // 解析返回的延迟数据
+            struct DelayResponse: Codable {
+                let delay: Int
+            }
+            
+            if let delayResponse = try? JSONDecoder().decode(DelayResponse.self, from: data) {
+                await MainActor.run {
+                    // 更新节点延迟
+                    updateNodeDelay(nodeName: proxyName, delay: delayResponse.delay)
+                    testingNodes.remove(proxyName)
+                    self.lastDelayTestTime = Date()  // 触发视图更新
+                    objectWillChange.send()
+                    
+                    // 刷新数据
+                    Task {
+                        await self.fetchProxies()
+                    }
+                }
+            } else {
+                // 如果解析失败，确保移除节点名称
+                await MainActor.run {
+                    testingNodes.remove(proxyName)
+                    objectWillChange.send()
+                }
+            }
+            
+        } catch {
+            await MainActor.run {
+                testingNodes.remove(proxyName)
+                objectWillChange.send()
+            }
             handleNetworkError(error)
         }
     }
