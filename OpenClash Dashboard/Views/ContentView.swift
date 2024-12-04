@@ -82,12 +82,12 @@ struct ContentView: View {
                                 destination: HelpView()
                             )
                             
-                            SettingsLinkRow(
-                                title: "给APP评分",
-                                icon: "star.fill",
-                                iconColor: .yellow,
-                                destination: RateAppView()
-                            )
+                            // SettingsLinkRow(
+                            //     title: "给APP评分",
+                            //     icon: "star.fill",
+                            //     iconColor: .yellow,
+                            //     destination: RateAppView()
+                            // )
                         }
                         .padding()
                         .background(Color(.secondarySystemGroupedBackground))
@@ -159,16 +159,26 @@ struct ServerRowView: View {
                     .font(.headline)
                 
                 HStack(spacing: 8) {
-                    Label(server.status.text, systemImage: "network")
-                        .font(.caption)
-                        .foregroundColor(server.status.color)
-                    
-                    if let version = server.version {
-                        Text("•")
-                            .foregroundColor(.secondary)
-                        Label(version, systemImage: "tag")
+                    if server.status == .ok {
+                        Label(server.status.text, systemImage: "network")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(server.status.color)
+                        
+                        if let version = server.version {
+                            Text("•")
+                                .foregroundColor(.secondary)
+                            Label(version, systemImage: "tag")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } else if let errorMessage = server.errorMessage {
+                        Text(errorMessage)
+                            .font(.caption)
+                            .foregroundColor(server.status.color)
+                    } else {
+                        Text(server.status.text)
+                            .font(.caption)
+                            .foregroundColor(server.status.color)
                     }
                 }
             }

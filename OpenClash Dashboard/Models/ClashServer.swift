@@ -9,6 +9,7 @@ struct ClashServer: Identifiable, Codable {
     var status: ServerStatus
     var version: String?
     var useSSL: Bool
+    var errorMessage: String?
     
     init(id: UUID = UUID(), name: String = "", url: String = "", port: String = "", secret: String = "", status: ServerStatus = .unknown, version: String? = nil, useSSL: Bool = false) {
         self.id = id
