@@ -6,6 +6,10 @@ Clash Dash 是一款原生 SwiftUI 开发的 OpenClash 管理工具。
     <img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" alt="Download on the App Store" style="width: 120px;">
 </a>
 
+## 预览
+
+<img src="preview.png" alt="Clash Dash Preview" width="300">
+
 ## 主要功能
 
 - 便捷管理多个 Clash 服务器
