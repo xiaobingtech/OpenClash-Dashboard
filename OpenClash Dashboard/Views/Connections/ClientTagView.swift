@@ -55,8 +55,8 @@ struct ClientTagView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(ip)
                                     .font(.headline)
-                                if !connection.metadata.process.isEmpty {
-                                    Text(connection.metadata.process)
+                                if let process = connection.metadata.process, !process.isEmpty {
+                                    Text(process)
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                 }

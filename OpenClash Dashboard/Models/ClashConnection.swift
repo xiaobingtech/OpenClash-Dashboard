@@ -83,49 +83,50 @@ struct ClashConnection: Identifiable, Codable, Equatable {
     }
     
     // 预览数据
-    static func preview() -> ClashConnection {
-        return ClashConnection(
-            id: "preview-id",
-            metadata: ConnectionMetadata(
-                network: "tcp",
-                type: "HTTPS",
-                sourceIP: "192.168.167.255",
-                destinationIP: "142.250.188.14",
-                sourcePort: "48078",
-                destinationPort: "443",
-                host: "www.youtube.com",
-                dnsMode: "normal",
-                inboundIP: "127.0.0.1",
-                inboundPort: "7890",
-                inboundName: "DEFAULT-HTTP",
-                remoteDestination: "14.29.122.199",
-                sourceGeoIP: nil,
-                destinationGeoIP: nil,
-                sourceIPASN: "",
-                destinationIPASN: "",
-                inboundUser: "",
-                uid: 0,
-                process: "",
-                processPath: "",
-                specialProxy: "",
-                specialRules: "",
-                dscp: 0,
-                sniffHost: ""
-            ),
-            upload: 993946000,
-            download: 993946000,
-            start: Date().addingTimeInterval(-3600),
-            chains: ["🇭🇰 香港 IEPL [01] [Air]", "Auto - UrlTest", "Proxy", "YouTube"],
-            rule: "RuleSet",
-            rulePayload: "YouTube",
-            downloadSpeed: 102400000.0,
-            uploadSpeed: 512.0,
-            isAlive: true
-        )
-    }
+   static func preview() -> ClashConnection {
+       return ClashConnection(
+           id: "preview-id",
+           metadata: ConnectionMetadata(
+               network: "tcp",
+               type: "HTTPS",
+               sourceIP: "192.168.167.255",
+               destinationIP: "142.250.188.14",
+               sourcePort: "48078",
+               destinationPort: "443",
+               host: "www.youtube.com",
+               dnsMode: "normal",
+               processPath: "",
+               specialProxy: "",
+               sourceGeoIP: nil,
+               destinationGeoIP: nil,
+               sourceIPASN: nil,
+               destinationIPASN: nil,
+               inboundIP: nil,
+               inboundPort: nil,
+               inboundName: nil,
+               inboundUser: nil,
+               uid: nil,
+               process: nil,
+               specialRules: nil,
+               remoteDestination: nil,
+               dscp: nil,
+               sniffHost: nil
+           ),
+           upload: 993946000,
+           download: 993946000,
+           start: Date().addingTimeInterval(-3600),
+           chains: ["🇭🇰 香港 IEPL [01] [Air]", "Auto - UrlTest", "Proxy", "YouTube"],
+           rule: "RuleSet",
+           rulePayload: "YouTube",
+           downloadSpeed: 102400000.0,
+           uploadSpeed: 512.0,
+           isAlive: true
+       )
+   }
 }
 
 struct ConnectionMetadata: Codable, Equatable {
+    // 必需字段
     let network: String
     let type: String
     let sourceIP: String
@@ -134,22 +135,24 @@ struct ConnectionMetadata: Codable, Equatable {
     let destinationPort: String
     let host: String
     let dnsMode: String
-    let inboundIP: String
-    let inboundPort: String
-    let inboundName: String
-    let remoteDestination: String
-    let sourceGeoIP: String?
-    let destinationGeoIP: [String]?
-    let sourceIPASN: String
-    let destinationIPASN: String
-    let inboundUser: String
-    let uid: Int
-    let process: String
     let processPath: String
     let specialProxy: String
-    let specialRules: String
-    let dscp: Int
-    let sniffHost: String
+    
+    // 可选字段
+    let sourceGeoIP: String?
+    let destinationGeoIP: [String]?
+    let sourceIPASN: String?
+    let destinationIPASN: String?
+    let inboundIP: String?
+    let inboundPort: String?
+    let inboundName: String?
+    let inboundUser: String?
+    let uid: Int?
+    let process: String?
+    let specialRules: String?
+    let remoteDestination: String?
+    let dscp: Int?
+    let sniffHost: String?
 }
 
 // API 响应模型
@@ -157,7 +160,7 @@ struct ConnectionsResponse: Codable {
     let downloadTotal: Int
     let uploadTotal: Int
     let connections: [ClashConnection]
-    let memory: Int
+    let memory: Int?  // 设为可选
 }
 
 // 添加编码键
