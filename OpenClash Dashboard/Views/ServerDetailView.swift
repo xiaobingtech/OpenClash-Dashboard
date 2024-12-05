@@ -275,43 +275,45 @@ struct OverviewTab: View {
                     )
                 }
                 
-                // 速率图表 - 直接使用 SpeedChartView，不用 ChartCard 包装
+                // 速率图表
                 SpeedChartView(speedHistory: monitor.speedHistory)
                     .padding()
                     .background(Color(.systemBackground))
                     .cornerRadius(12)
                     .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
                 
-                // 内存表
-                ChartCard(title: "内存使用", icon: "memorychip") {
-                    Chart(monitor.memoryHistory) { record in
-                        AreaMark(
-                            x: .value("Time", record.timestamp),
-                            y: .value("Memory", record.usage)
-                        )
-                        .foregroundStyle(.purple.opacity(0.3))
-                        
-                        LineMark(
-                            x: .value("Time", record.timestamp),
-                            y: .value("Memory", record.usage)
-                        )
-                        .foregroundStyle(.purple)
-                    }
-                    .frame(height: 200)
-                    .chartYAxis {
-                        AxisMarks(position: .leading) { value in
-                            if let memory = value.as(Double.self) {
-                                AxisGridLine()
-                                AxisValueLabel {
-                                    Text("\(Int(memory)) MB")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                // 只在 Meta 服务器上显示内存图表
+                if server.serverType == .meta {
+                    ChartCard(title: "内存使用", icon: "memorychip") {
+                        Chart(monitor.memoryHistory) { record in
+                            AreaMark(
+                                x: .value("Time", record.timestamp),
+                                y: .value("Memory", record.usage)
+                            )
+                            .foregroundStyle(.purple.opacity(0.3))
+                            
+                            LineMark(
+                                x: .value("Time", record.timestamp),
+                                y: .value("Memory", record.usage)
+                            )
+                            .foregroundStyle(.purple)
+                        }
+                        .frame(height: 200)
+                        .chartYAxis {
+                            AxisMarks(position: .leading) { value in
+                                if let memory = value.as(Double.self) {
+                                    AxisGridLine()
+                                    AxisValueLabel {
+                                        Text("\(Int(memory)) MB")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
                             }
                         }
-                    }
-                    .chartXAxis {
-                        AxisMarks(values: .automatic(desiredCount: 3))
+                        .chartXAxis {
+                            AxisMarks(values: .automatic(desiredCount: 3))
+                        }
                     }
                 }
             }
