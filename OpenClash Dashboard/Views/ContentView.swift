@@ -140,6 +140,25 @@ struct ContentView: View {
 struct ServerRowView: View {
     let server: ClashServer
     
+    private var versionDisplay: String {
+        guard let version = server.version else { return "" }
+        // 如果版本号太长，截取前15个字符
+        return version.count > 15 ? String(version.prefix(15)) + "..." : version
+    }
+    
+    private var statusIcon: String {
+        switch server.status {
+        case .ok:
+            return "checkmark.circle.fill"
+        case .error:
+            return "exclamationmark.circle.fill"
+        case .unauthorized:
+            return "lock.circle.fill"
+        case .unknown:
+            return "questionmark.circle.fill"
+        }
+    }
+    
     var body: some View {
         HStack(spacing: 16) {
             // 状态指示器
@@ -148,38 +167,50 @@ struct ServerRowView: View {
                     .fill(server.status.color.opacity(0.2))
                     .frame(width: 40, height: 40)
                 
-                Circle()
-                    .fill(server.status.color)
-                    .frame(width: 12, height: 12)
+                Image(systemName: statusIcon)
+                    .foregroundColor(server.status.color)
             }
             
             // 服务器信息
             VStack(alignment: .leading, spacing: 6) {
                 Text(server.displayName)
                     .font(.headline)
+                    .lineLimit(1)
                 
-                HStack(spacing: 8) {
-                    if server.status == .ok {
-                        Label(server.status.text, systemImage: "network")
+                if server.status == .ok {
+                    HStack(spacing: 4) {
+                        // 服务器类型标签
+                        if let serverType = server.serverType {
+                            Label {
+                                Text(serverType.rawValue)
+                                    .foregroundColor(.secondary)
+                            } icon: {
+                                Image(systemName: "cpu")
+                                    .foregroundColor(.secondary)
+                            }
                             .font(.caption)
-                            .foregroundColor(server.status.color)
-                        
-                        if let version = server.version {
+                            
                             Text("•")
                                 .foregroundColor(.secondary)
-                            Label(version, systemImage: "tag")
                                 .font(.caption)
+                        }
+                        
+                        // 版本信息
+                        Label {
+                            Text(versionDisplay)
+                                .foregroundColor(.secondary)
+                        } icon: {
+                            Image(systemName: "tag")
                                 .foregroundColor(.secondary)
                         }
-                    } else if let errorMessage = server.errorMessage {
-                        Text(errorMessage)
-                            .font(.caption)
-                            .foregroundColor(server.status.color)
-                    } else {
-                        Text(server.status.text)
-                            .font(.caption)
-                            .foregroundColor(server.status.color)
+                        .font(.caption)
+                        .lineLimit(1)
                     }
+                } else if let errorMessage = server.errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundColor(server.status.color)
+                        .lineLimit(1)
                 }
             }
             
@@ -190,9 +221,9 @@ struct ServerRowView: View {
                 .foregroundColor(.secondary)
         }
         .padding()
+        .frame(height: 80)  // 固定卡片高度
         .background(Color(.secondarySystemGroupedBackground))
         .cornerRadius(16)
-        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
 }
 

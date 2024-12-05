@@ -10,6 +10,13 @@ struct ClashServer: Identifiable, Codable {
     var version: String?
     var useSSL: Bool
     var errorMessage: String?
+    var serverType: ServerType?
+    
+    enum ServerType: String, Codable {
+        case premium = "Premium"
+        case meta = "Meta"
+        case unknown = "Unknown"
+    }
     
     init(id: UUID = UUID(), name: String = "", url: String = "", port: String = "", secret: String = "", status: ServerStatus = .unknown, version: String? = nil, useSSL: Bool = false) {
         self.id = id

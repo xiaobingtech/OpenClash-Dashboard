@@ -3,6 +3,7 @@ import Foundation
 // 将 VersionResponse 移到类外面
 struct VersionResponse: Codable {
     let meta: Bool?
+    let premium: Bool?
     let version: String
 }
 
@@ -19,6 +20,15 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate {
     override init() {
         super.init()
         loadServers()
+    }
+
+    private func determineServerType(from response: VersionResponse) -> ClashServer.ServerType {
+        if response.premium == true {
+            return .premium
+        } else if response.meta == true {
+            return .meta
+        }
+        return .unknown
     }
     
     private func makeURLSession(for server: ClashServer) -> URLSession {
@@ -148,14 +158,14 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate {
             switch httpResponse.statusCode {
             case 200:
                 do {
-                    let versionResponse = try JSONDecoder().decode(VersionResponse.self, from: data)
-                    // print("✅ 成功获取版本: \(versionResponse.version)")
-                    var updatedServer = server
-                    updatedServer.status = .ok
-                    updatedServer.version = versionResponse.version
-                    updatedServer.errorMessage = nil
-                    updateServer(updatedServer)
-                } catch {
+                let versionResponse = try JSONDecoder().decode(VersionResponse.self, from: data)
+                var updatedServer = server
+                updatedServer.status = .ok
+                updatedServer.version = versionResponse.version
+                updatedServer.serverType = determineServerType(from: versionResponse)
+                updatedServer.errorMessage = nil
+                updateServer(updatedServer)
+            } catch {
                     if let versionDict = try? JSONDecoder().decode([String: String].self, from: data),
                        let version = versionDict["version"] {
                         // print("✅ 成功获取版本(旧格式): \(version)")
