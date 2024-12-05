@@ -316,13 +316,22 @@ class NetworkMonitor: ObservableObject {
     }
     
     private func handleConnectionsData(_ text: String) {
-        guard let data = text.data(using: .utf8),
-              let connections = try? JSONDecoder().decode(ConnectionsData.self, from: data) else { return }
+        // print("收到连接数据: \(text)")  // 添加调试日志
         
-        DispatchQueue.main.async { [weak self] in
-            self?.activeConnections = connections.connections.count
-            self?.totalUpload = self?.formatBytes(connections.uploadTotal) ?? "0 MB"
-            self?.totalDownload = self?.formatBytes(connections.downloadTotal) ?? "0 MB"
+        guard let data = text.data(using: .utf8) else {
+            print("无法将文本转换为数据")
+            return
+        }
+        
+        do {
+            let connections = try JSONDecoder().decode(ConnectionsData.self, from: data)
+            DispatchQueue.main.async { [weak self] in
+                self?.activeConnections = connections.connections.count
+                self?.totalUpload = self?.formatBytes(connections.uploadTotal) ?? "0 MB"
+                self?.totalDownload = self?.formatBytes(connections.downloadTotal) ?? "0 MB"
+            }
+        } catch {
+            print("解析连接数据失败: \(error)")
         }
     }
     
@@ -384,15 +393,114 @@ struct ConnectionsData: Codable {
     let downloadTotal: Int
     let uploadTotal: Int
     let connections: [Connection]
-    let memory: Int
+    let memory: Int?
+    
+    private enum CodingKeys: String, CodingKey {
+        case downloadTotal, uploadTotal, connections, memory
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        downloadTotal = try container.decode(Int.self, forKey: .downloadTotal)
+        uploadTotal = try container.decode(Int.self, forKey: .uploadTotal)
+        memory = try container.decodeIfPresent(Int.self, forKey: .memory)
+        
+        do {
+            connections = try container.decode([Connection].self, forKey: .connections)
+        } catch {
+            let rawConnections = try container.decode([PremiumConnection].self, forKey: .connections)
+            connections = rawConnections.map { premiumConn in
+                Connection(
+                    id: premiumConn.id,
+                    metadata: ConnectionMetadata(
+                        network: premiumConn.metadata.network,
+                        type: premiumConn.metadata.type,
+                        sourceIP: premiumConn.metadata.sourceIP,
+                        destinationIP: premiumConn.metadata.destinationIP,
+                        sourcePort: premiumConn.metadata.sourcePort,
+                        destinationPort: premiumConn.metadata.destinationPort,
+                        host: premiumConn.metadata.host,
+                        dnsMode: premiumConn.metadata.dnsMode,
+                        processPath: premiumConn.metadata.processPath ?? "",
+                        specialProxy: premiumConn.metadata.specialProxy ?? "",
+                        sourceGeoIP: nil,
+                        destinationGeoIP: nil,
+                        sourceIPASN: nil,
+                        destinationIPASN: nil,
+                        inboundIP: nil,
+                        inboundPort: nil,
+                        inboundName: nil,
+                        inboundUser: nil,
+                        uid: nil,
+                        process: nil,
+                        specialRules: nil,
+                        remoteDestination: nil,
+                        dscp: nil,
+                        sniffHost: nil
+                    ),
+                    upload: premiumConn.upload,
+                    download: premiumConn.download,
+                    start: premiumConn.start,
+                    chains: premiumConn.chains,
+                    rule: premiumConn.rule,
+                    rulePayload: premiumConn.rulePayload
+                )
+            }
+        }
+    }
+}
+
+// Premium 服务器的连接数据结构
+struct PremiumConnection: Codable {
+    let id: String
+    let metadata: PremiumMetadata
+    let upload: Int
+    let download: Int
+    let start: String
+    let chains: [String]
+    let rule: String
+    let rulePayload: String
+}
+
+struct PremiumMetadata: Codable {
+    let network: String
+    let type: String
+    let sourceIP: String
+    let destinationIP: String
+    let sourcePort: String
+    let destinationPort: String
+    let host: String
+    let dnsMode: String
+    let processPath: String?
+    let specialProxy: String?
 }
 
 struct Connection: Codable {
     let id: String
+    let metadata: ConnectionMetadata
     let upload: Int
     let download: Int
     let start: String
-    // 其他字段可以根据需要添加
+    let chains: [String]
+    let rule: String
+    let rulePayload: String
+    let downloadSpeed: Double
+    let uploadSpeed: Double
+    let isAlive: Bool
+    
+    init(id: String, metadata: ConnectionMetadata, upload: Int, download: Int, start: String, chains: [String], rule: String, rulePayload: String, downloadSpeed: Double = 0, uploadSpeed: Double = 0, isAlive: Bool = true) {
+        self.id = id
+        self.metadata = metadata
+        self.upload = upload
+        self.download = download
+        self.start = start
+        self.chains = chains
+        self.rule = rule
+        self.rulePayload = rulePayload
+        self.downloadSpeed = downloadSpeed
+        self.uploadSpeed = uploadSpeed
+        self.isAlive = isAlive
+    }
 }
 
 struct SpeedRecord: Identifiable {
