@@ -80,11 +80,17 @@ class ProxyViewModel: ObservableObject {
     @Published var testingNodes: Set<String> = []
     @Published var lastUpdated = Date()
     @Published var lastDelayTestTime = Date()
+    @Published var isSortMode = false  // 添加排序模式状态
     
     private let server: ClashServer
     private var currentTask: Task<Void, Never>?
     private let settingsViewModel = SettingsViewModel()
     private let defaultTestUrl = "http://www.gstatic.com/generate_204"
+    
+    // 添加用于存储自定义顺序的键
+    private var customOrderKey: String {
+        "proxyGroups.customOrder.\(server.id)"
+    }
     
     init(server: ClashServer) {
         self.server = server
@@ -372,7 +378,7 @@ class ProxyViewModel: ObservableObject {
         }
     }
     
-    // 辅助方法：更新节点延迟
+    // 辅助��法：更新节点延迟
     private func updateNodeDelay(nodeName: String, delay: Int) {
         // 更新 providerNodes 中的节点
         for (providerName, providerNodes) in self.providerNodes {
@@ -609,6 +615,30 @@ class ProxyViewModel: ObservableObject {
             }
             handleNetworkError(error)
         }
+    }
+    
+    // 添加保存自定义顺序的方法
+    func saveCustomOrder() {
+        let orderDict = Dictionary(uniqueKeysWithValues: groups.enumerated().map { ($0.element.name, $0.offset) })
+        UserDefaults.standard.set(orderDict, forKey: customOrderKey)
+    }
+    
+    // 添加获取排序后的组的方法
+    func getSortedGroups() -> [ProxyGroup] {
+        if let savedOrder = UserDefaults.standard.dictionary(forKey: customOrderKey) as? [String: Int] {
+            // 检查是否所有当前组都在保存的顺序中
+            let allGroupsPresent = groups.allSatisfy { savedOrder[$0.name] != nil }
+            
+            if allGroupsPresent {
+                // 使用保存的顺序
+                return groups.sorted { 
+                    savedOrder[$0.name] ?? 0 < savedOrder[$1.name] ?? 0 
+                }
+            }
+        }
+        
+        // 如果没有保存的顺序或组发生变化，使用字母顺序
+        return groups.sorted { $0.name < $1.name }
     }
 }
 
