@@ -380,8 +380,12 @@ struct ProxyGroupCard: View {
                 }
                 // 将动画移到这里确保它持续运行
                 .onChange(of: selectedNode) { newValue in
-                    withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                    withAnimation(.easeInOut(duration: 0.3)) {
                         isGlowing = true
+                    }
+                    // 延迟后重置状态
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        isGlowing = false
                     }
                 }
             }
