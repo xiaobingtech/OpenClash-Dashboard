@@ -86,113 +86,115 @@ struct SettingsView: View {
             }
             
             // TUN 设置
-            Section("TUN 设置") {
-                Toggle("启用 TUN 模式", isOn: $viewModel.tunEnable)
-                    .onChange(of: viewModel.tunEnable) { newValue in
-                        viewModel.updateConfig("tun.enable", value: newValue, server: server)
-                    }
-                
-                HStack {
-                    Text("TUN 协议栈")
-                    Spacer()
-                    Picker("", selection: $viewModel.tunStack) {
-                        Text("gVisor").tag("gVisor")
-                        Text("Mixed").tag("mixed")
-                        Text("System").tag("system")
-                    }
-                    .pickerStyle(.menu)
-                    .onChange(of: viewModel.tunStack) { newValue in
-                        viewModel.updateConfig("tun.stack", value: newValue, server: server)
-                    }
-                }
-                
-                HStack {
-                    Text("设备名称")
-                    Spacer()
-                    TextField("utun", text: $viewModel.tunDevice)
-                        .multilineTextAlignment(.trailing)
-                        .onChange(of: viewModel.tunDevice) { newValue in
-                            viewModel.updateConfig("tun.device", value: newValue, server: server)
+            if viewModel.config?.isMetaServer == true {
+                Section("TUN 设置") {
+                    Toggle("启用 TUN 模式", isOn: $viewModel.tunEnable)
+                        .onChange(of: viewModel.tunEnable) { newValue in
+                            viewModel.updateConfig("tun.enable", value: newValue, server: server)
                         }
-                }
-                
-                HStack {
-                    Text("网卡名称")
-                    Spacer()
-                    TextField("", text: $viewModel.interfaceName)
-                        .multilineTextAlignment(.trailing)
-                        .onChange(of: viewModel.interfaceName) { newValue in
-                            viewModel.updateConfig("interface-name", value: newValue, server: server)
+                    
+                    HStack {
+                        Text("TUN 协议栈")
+                        Spacer()
+                        Picker("", selection: $viewModel.tunStack) {
+                            Text("gVisor").tag("gVisor")
+                            Text("Mixed").tag("mixed")
+                            Text("System").tag("system")
                         }
-                }
-            }
-            
-            // 系统维护
-            Section("系统维护") {
-                Button(action: { viewModel.reloadConfig(server: server) }) {
+                        .pickerStyle(.menu)
+                        .onChange(of: viewModel.tunStack) { newValue in
+                            viewModel.updateConfig("tun.stack", value: newValue, server: server)
+                        }
+                    }
+                    
                     HStack {
-                        Text("重载配置文件")
+                        Text("设备名称")
                         Spacer()
-                        Image(systemName: "arrow.clockwise")
+                        TextField("utun", text: $viewModel.tunDevice)
+                            .multilineTextAlignment(.trailing)
+                            .onChange(of: viewModel.tunDevice) { newValue in
+                                viewModel.updateConfig("tun.device", value: newValue, server: server)
+                            }
+                    }
+                    
+                    HStack {
+                        Text("网卡名称")
+                        Spacer()
+                        TextField("", text: $viewModel.interfaceName)
+                            .multilineTextAlignment(.trailing)
+                            .onChange(of: viewModel.interfaceName) { newValue in
+                                viewModel.updateConfig("interface-name", value: newValue, server: server)
+                            }
                     }
                 }
                 
-                Button(action: { viewModel.updateGeoDatabase(server: server) }) {
-                    HStack {
-                        Text("更新 GEO 数据库")
-                        Spacer()
-                        Image(systemName: "globe.asia.australia")
+                // 系统维护
+                Section("系统维护") {
+                    Button(action: { viewModel.reloadConfig(server: server) }) {
+                        HStack {
+                            Text("重载配置文件")
+                            Spacer()
+                            Image(systemName: "arrow.clockwise")
+                        }
                     }
-                }
-                
-                Button(action: { viewModel.clearFakeIP(server: server) }) {
-                    HStack {
-                        Text("清空 FakeIP 数据库")
-                        Spacer()
-                        Image(systemName: "trash")
+                    
+                    Button(action: { viewModel.updateGeoDatabase(server: server) }) {
+                        HStack {
+                            Text("更新 GEO 数据库")
+                            Spacer()
+                            Image(systemName: "globe.asia.australia")
+                        }
                     }
-                }
-                
-                Button(action: { 
-                    // 显示重启确认对话框
-                    showingRestartAlert = true 
-                }) {
-                    HStack {
-                        Text("重启核心")
-                        Spacer()
-                        Image(systemName: "power")
+                    
+                    Button(action: { viewModel.clearFakeIP(server: server) }) {
+                        HStack {
+                            Text("清空 FakeIP 数据库")
+                            Spacer()
+                            Image(systemName: "trash")
+                        }
                     }
-                }
-                
-                Button(action: { 
-                    // 显示更新确认对话框
-                    showingUpgradeAlert = true 
-                }) {
-                    HStack {
-                        Text("更新核心")
-                            .foregroundColor(.red)
-                        Spacer()
-                        Image(systemName: "exclamationmark.triangle")
-                            .foregroundColor(.red)
+                    
+                    Button(action: { 
+                        // 显示重启确认对话框
+                        showingRestartAlert = true 
+                    }) {
+                        HStack {
+                            Text("重启核心")
+                            Spacer()
+                            Image(systemName: "power")
+                        }
+                    }
+                    
+                    Button(action: { 
+                        // 显示更新确认对话框
+                        showingUpgradeAlert = true 
+                    }) {
+                        HStack {
+                            Text("更新核心")
+                                .foregroundColor(.red)
+                            Spacer()
+                            Image(systemName: "exclamationmark.triangle")
+                                .foregroundColor(.red)
+                        }
                     }
                 }
             }
-            .alert("重启核心", isPresented: $showingRestartAlert) {
-                Button("取消", role: .cancel) { }
-                Button("确认重启", role: .destructive) {
-                    viewModel.restartCore(server: server)
-                }
-            } message: {
-                Text("重启核心会导致服务暂时中断，确定要继续吗？")
+        }
+        .alert("重启核心", isPresented: $showingRestartAlert) {
+            Button("取消", role: .cancel) { }
+            Button("确认重启", role: .destructive) {
+                viewModel.restartCore(server: server)
             }
-            .alert("更新核心", isPresented: $showingUpgradeAlert) {
-                Button("取消", role: .cancel) { }
-                Button("确认更新", role: .destructive) {
-                    viewModel.upgradeCore(server: server)
-                }
-            } message: {
-                Text("更新核心是一个高风险操作，可能会导致服务不可用。除非您明确知道自己在做什么，否则不建议执行此操作。\n\n确定要继续吗？")
+        } message: {
+            Text("重启核心会导致服务暂时中断，确定要继续吗？")
+        }
+        .alert("更新核心", isPresented: $showingUpgradeAlert) {
+            Button("取消", role: .cancel) { }
+            Button("确认更新", role: .destructive) {
+                viewModel.upgradeCore(server: server)
             }
+        } message: {
+            Text("更新核心是一个高风险操作，可能会导致服务不可用。除非您明确知道自己在做什么，否则不建议执行此操作。\n\n确定要继续吗？")
         }
         .navigationTitle("配置")
         .navigationBarTitleDisplayMode(.inline)

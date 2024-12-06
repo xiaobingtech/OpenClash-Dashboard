@@ -7,9 +7,10 @@ struct ClashConfig: Codable {
     let mode: String
     let logLevel: String
     let allowLan: Bool
-    let sniffing: Bool
-    let interfaceName: String
-    let tun: TunConfig
+    let sniffing: Bool?
+    let interfaceName: String?
+    let tun: TunConfig?
+    let tuicServer: TuicServer?
     
     struct TunConfig: Codable {
         let enable: Bool
@@ -31,6 +32,10 @@ struct ClashConfig: Codable {
         }
     }
     
+    struct TuicServer: Codable {
+        let enable: Bool
+    }
+    
     enum CodingKeys: String, CodingKey {
         case port
         case socksPort = "socks-port"
@@ -43,5 +48,10 @@ struct ClashConfig: Codable {
         case sniffing
         case interfaceName = "interface-name"
         case tun
+        case tuicServer = "tuic-server"
+    }
+    
+    var isMetaServer: Bool {
+        return tuicServer != nil
     }
 } 

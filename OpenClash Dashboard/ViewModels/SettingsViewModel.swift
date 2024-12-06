@@ -46,13 +46,19 @@ class SettingsViewModel: ObservableObject {
         self.mode = config.mode
         self.logLevel = config.logLevel
         self.allowLan = config.allowLan
-        self.sniffing = config.sniffing
-        self.tunEnable = config.tun.enable
-        self.tunDevice = config.tun.device
-        self.tunStack = config.tun.stack
-        self.interfaceName = config.interfaceName
-        self.tunAutoRoute = config.tun.autoRoute
-        self.tunAutoDetectInterface = config.tun.autoDetectInterface
+        self.sniffing = config.sniffing ?? false
+        
+        if let tun = config.tun {
+            self.tunEnable = tun.enable
+            self.tunDevice = tun.device
+            self.tunStack = tun.stack
+            self.tunAutoRoute = tun.autoRoute
+            self.tunAutoDetectInterface = tun.autoDetectInterface
+        }
+        
+        if let interfaceName = config.interfaceName {
+            self.interfaceName = interfaceName
+        }
     }
     
     func updateConfig(_ path: String, value: Any, server: ClashServer) {
