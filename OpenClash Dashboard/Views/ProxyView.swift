@@ -334,7 +334,7 @@ struct ProxyGroupCard: View {
                         .buttonStyle(.plain)
                     }
                 }
-                // 将动画移到这里��确保它持续运行
+                // 将动画移到这里确保它持续运行
                 .onChange(of: selectedNode) { newValue in
                     withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
                         isGlowing = true
@@ -577,12 +577,24 @@ struct ProxyProviderCard: View {
                 }
             }
             
-            // 只在有订阅信息时显示到期时间
-            if let info = provider.subscriptionInfo,
-               let expire = formatExpireDate(info.expire) {
-                Text("到期时间: \(expire)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            // 信息栏：到期时间和更新时间
+            HStack {
+                // 到期时间
+                if let info = provider.subscriptionInfo,
+                   let expire = formatExpireDate(info.expire) {
+                    Text("到期时间: \(expire)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                // 更新时间
+                if let updatedAt = provider.updatedAt {
+                    Text("更新时间: \(formatDate(updatedAt))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             
             if isExpanded {
@@ -680,7 +692,7 @@ struct ProxyProviderCard: View {
     }
     
     private func formatDate(_ dateString: String) -> String {
-        // 将 ISO 8601 格式字符串转��为 Date
+        // 将 ISO 8601 格式字符串转换为 Date
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         
@@ -697,13 +709,13 @@ struct ProxyProviderCard: View {
             return "刚刚"
         } else if interval < 3600 {
             let minutes = Int(interval / 60)
-            return "\(minutes) 钟前"
+            return "\(minutes)分钟前"
         } else if interval < 86400 {
             let hours = Int(interval / 3600)
-            return "\(hours) 小时前"
+            return "\(hours)小时前"
         } else if interval < 2592000 {
             let days = Int(interval / 86400)
-            return "\(days) 天前"
+            return "\(days)天前"
         } else {
             // 过30天显示具体日期
             let dateFormatter = DateFormatter()
