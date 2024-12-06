@@ -119,6 +119,44 @@ class ProxyViewModel: ObservableObject {
                 
                 // 解析 providers 数据，获取所有实际的代理节点
                 if let providersResponse = try? JSONDecoder().decode(ProxyProvidersResponse.self, from: providersData) {
+                    // 更新 providers - 只包含 HTTP 类型或有订阅信息的 provider
+                    self.providers = providersResponse.providers.compactMap { name, provider in
+                        // 只有当 vehicleType 为 HTTP 或有 subscriptionInfo 时才包含
+                        guard provider.vehicleType == "HTTP" || provider.subscriptionInfo != nil else {
+                            return nil
+                        }
+                        
+                        return Provider(
+                            name: name,
+                            type: provider.type,
+                            vehicleType: provider.vehicleType,
+                            nodeCount: provider.proxies.count,
+                            testUrl: provider.testUrl,
+                            subscriptionInfo: provider.subscriptionInfo,
+                            updatedAt: provider.updatedAt
+                        )
+                    }
+                    
+                    // 更新 providerNodes - 同样只包含符合条件的 provider
+                    self.providerNodes = Dictionary(uniqueKeysWithValues: providersResponse.providers.compactMap { name, provider -> (String, [ProxyNode])? in
+                        // 只有当 vehicleType 为 HTTP 或有 subscriptionInfo 时才包含
+                        guard provider.vehicleType == "HTTP" || provider.subscriptionInfo != nil else {
+                            return nil
+                        }
+                        
+                        let nodes = provider.proxies.map { proxy in
+                            ProxyNode(
+                                id: proxy.id ?? UUID().uuidString,
+                                name: proxy.name,
+                                type: proxy.type,
+                                alive: proxy.alive,
+                                delay: proxy.history.last?.delay ?? 0,
+                                history: proxy.history
+                            )
+                        }
+                        return (name, nodes)
+                    })
+                    
                     // 收集所有 provider 中的节点
                     var allProviderNodes: [ProxyNode] = []
                     for (_, provider) in providersResponse.providers {
@@ -344,7 +382,7 @@ class ProxyViewModel: ObservableObject {
                         id: node.id,
                         name: node.name,
                         type: node.type,
-                        alive: true,  // 如果有延迟数据，说明节点是活跃的
+                        alive: true,  // 如果有延迟数据，说明节点是活的
                         delay: delay,
                         history: node.history
                     )
@@ -454,7 +492,7 @@ class ProxyViewModel: ObservableObject {
                     // 更新时间戳
                     self.lastUpdated = Date()
                     
-                    // 刷新数据
+                    // 刷数据
                     Task {
                         await self.fetchProxies()
                     }
