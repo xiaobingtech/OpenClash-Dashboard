@@ -190,6 +190,7 @@ struct ProxyView: View {
                     history: []
                 )
             }
+            // 确保所有节点都被包含
             return allNodes.first { $0.name == name }
         }
         
