@@ -12,7 +12,7 @@ class RulesViewModel: ObservableObject {
         let type: String
         let payload: String
         let proxy: String
-        let size: Int
+        let size: Int?  // 改为可选类型，适配原版 Clash 内核
         
         var id: String { "\(type)-\(payload)" }
         
@@ -36,7 +36,7 @@ class RulesViewModel: ObservableObject {
         let type: String
         let ruleCount: Int
         let updatedAt: String
-        let format: String
+        let format: String?  // 改为可选类型
         let vehicleType: String
         
         var id: String { name }
@@ -53,7 +53,7 @@ class RulesViewModel: ObservableObject {
             self.type = try container.decode(String.self, forKey: .type)
             self.ruleCount = try container.decode(Int.self, forKey: .ruleCount)
             self.updatedAt = try container.decode(String.self, forKey: .updatedAt)
-            self.format = try container.decode(String.self, forKey: .format)
+            self.format = try container.decodeIfPresent(String.self, forKey: .format)  // 使用 decodeIfPresent
             self.vehicleType = try container.decode(String.self, forKey: .vehicleType)
         }
         
