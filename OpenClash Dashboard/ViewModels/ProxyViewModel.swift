@@ -115,13 +115,20 @@ class ProxyViewModel: ObservableObject {
     
     @MainActor
     func fetchProxies() async {
+        // 1. 取消之前的任务前先等待完成
+        await currentTask?.value
         currentTask?.cancel()
         
         currentTask = Task {
             do {
-                // 1. 获取 providers 数据
+                // 2. 添加任务取消检查
+                if Task.isCancelled { return }
+                
+                // 获取 providers 数据
                 guard let providersRequest = makeRequest(path: "providers/proxies") else { return }
                 let (providersData, _) = try await URLSession.shared.data(for: providersRequest)
+                
+                if Task.isCancelled { return }
                 
                 // 解析 providers 数据，获取所有实际的代理节点
                 if let providersResponse = try? JSONDecoder().decode(ProxyProvidersResponse.self, from: providersData) {
@@ -186,14 +193,19 @@ class ProxyViewModel: ObservableObject {
                     if let proxiesResponse = try? JSONDecoder().decode(ProxyResponse.self, from: proxiesData) {
                         // 5. 更新组数据
                         self.groups = proxiesResponse.proxies.compactMap { name, proxy in
-                            guard proxy.all != nil else { return nil }
+                            // 只过滤掉没有 all 数组的代理
+                            guard proxy.all != nil, !proxy.all!.isEmpty else { return nil }
                             return ProxyGroup(
                                 name: name,
                                 type: proxy.type,
                                 now: proxy.now ?? "",
-                                all: proxy.all ?? []
+                                all: proxy.all ?? [],
+                                alive: proxy.alive
                             )
                         }
+                        
+                        // 确保立即触发 UI 更新
+                        objectWillChange.send()
                         
                         // 6. 合并所有节点数据
                         var allNodes: [ProxyNode] = []
@@ -233,7 +245,9 @@ class ProxyViewModel: ObservableObject {
                     }
                 }
             } catch {
-                handleNetworkError(error)
+                if !(error is CancellationError) {
+                    handleNetworkError(error)
+                }
             }
         }
     }
@@ -331,7 +345,7 @@ class ProxyViewModel: ObservableObject {
                 return
             }
             
-            // 如果不是 REJECT 节点，测试延迟
+            // 如果不 REJECT 节点，测试延迟
             if proxyName != "REJECT" {
                 await testNodeDelay(nodeName: proxyName)
             }
@@ -378,7 +392,7 @@ class ProxyViewModel: ObservableObject {
         }
     }
     
-    // 辅助��法：更新节点延迟
+    // 辅助法：更新节点延迟
     private func updateNodeDelay(nodeName: String, delay: Int) {
         // 更新 providerNodes 中的节点
         for (providerName, providerNodes) in self.providerNodes {
@@ -623,21 +637,31 @@ class ProxyViewModel: ObservableObject {
         UserDefaults.standard.set(orderDict, forKey: customOrderKey)
     }
     
-    // 添加获取排序后的组的方法
+    // 修改获取排序后的组的方法
     func getSortedGroups() -> [ProxyGroup] {
-        if let savedOrder = UserDefaults.standard.dictionary(forKey: customOrderKey) as? [String: Int] {
-            // 检查是否所有当前组都在保存的顺序中
+        // 如果处于排序模式且有保存的自定义顺序，使用自定义顺序
+        if isSortMode, let savedOrder = UserDefaults.standard.dictionary(forKey: customOrderKey) as? [String: Int] {
             let allGroupsPresent = groups.allSatisfy { savedOrder[$0.name] != nil }
-            
             if allGroupsPresent {
-                // 使用保存的顺序
                 return groups.sorted { 
                     savedOrder[$0.name] ?? 0 < savedOrder[$1.name] ?? 0 
                 }
             }
         }
         
-        // 如果没有保存的顺序或组发生变化，使用字母顺序
+        // 获取 GLOBAL 组的配置作为排序依据
+        if let globalGroup = groups.first(where: { $0.name == "GLOBAL" }) {
+            var sortIndex = globalGroup.all
+            sortIndex.append("GLOBAL") // 将 GLOBAL 添加到末尾
+            
+            return groups.sorted { prev, next in
+                let prevIndex = sortIndex.firstIndex(of: prev.name) ?? Int.max
+                let nextIndex = sortIndex.firstIndex(of: next.name) ?? Int.max
+                return prevIndex < nextIndex
+            }
+        }
+        
+        // 如果找不到 GLOBAL 组，则使用字母顺序
         return groups.sorted { $0.name < $1.name }
     }
 }
@@ -703,7 +727,7 @@ struct ProxyInfo: Codable {
         xudp = try container.decodeIfPresent(Bool.self, forKey: .xudp)
     }
     
-    // 添加编码方法
+    // 添加编码法
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(name, forKey: .name)
