@@ -80,17 +80,11 @@ class ProxyViewModel: ObservableObject {
     @Published var testingNodes: Set<String> = []
     @Published var lastUpdated = Date()
     @Published var lastDelayTestTime = Date()
-    @Published var isSortMode = false  // 添加排序模式状态
     
     private let server: ClashServer
     private var currentTask: Task<Void, Never>?
     private let settingsViewModel = SettingsViewModel()
     private let defaultTestUrl = "http://www.gstatic.com/generate_204"
-    
-    // 添加用于存储自定义顺序的键
-    private var customOrderKey: String {
-        "proxyGroups.customOrder.\(server.id)"
-    }
     
     init(server: ClashServer) {
         self.server = server
@@ -631,25 +625,9 @@ class ProxyViewModel: ObservableObject {
         }
     }
     
-    // 添加保存自定义顺序的方法
-    func saveCustomOrder() {
-        let orderDict = Dictionary(uniqueKeysWithValues: groups.enumerated().map { ($0.element.name, $0.offset) })
-        UserDefaults.standard.set(orderDict, forKey: customOrderKey)
-    }
-    
-    // 修改获取排序后的组的方法
+    // 简化获取排序后的组的方法，只使用 GLOBAL 组排序
     func getSortedGroups() -> [ProxyGroup] {
-        // 如果处于排序模式且有保存的自定义顺序，使用自定义顺序
-        if isSortMode, let savedOrder = UserDefaults.standard.dictionary(forKey: customOrderKey) as? [String: Int] {
-            let allGroupsPresent = groups.allSatisfy { savedOrder[$0.name] != nil }
-            if allGroupsPresent {
-                return groups.sorted { 
-                    savedOrder[$0.name] ?? 0 < savedOrder[$1.name] ?? 0 
-                }
-            }
-        }
-        
-        // 获取 GLOBAL 组的配置作为排序依据
+        // 使用 GLOBAL 组顺序
         if let globalGroup = groups.first(where: { $0.name == "GLOBAL" }) {
             var sortIndex = globalGroup.all
             sortIndex.append("GLOBAL") // 将 GLOBAL 添加到末尾

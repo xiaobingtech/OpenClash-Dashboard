@@ -6,7 +6,6 @@ struct ProxyView: View {
     @State private var showingJumpMenu = false
     @Namespace private var scrollSpace
     @State private var isRefreshing = false
-    @State private var draggedItem: ProxyGroup?
     
     init(server: ClashServer) {
         self.server = server
@@ -34,40 +33,6 @@ struct ProxyView: View {
                                     viewModel: viewModel
                                 )
                                 .id(group.name)
-                                .onLongPressGesture {
-                                    withAnimation {
-                                        viewModel.isSortMode = true
-                                    }
-                                }
-                                .opacity(viewModel.isSortMode ? 0.8 : 1.0)
-                                .overlay(
-                                    viewModel.isSortMode ?
-                                    Image(systemName: "line.3.horizontal")
-                                        .foregroundColor(.gray)
-                                        .padding(8)
-                                        .background(.ultraThinMaterial)
-                                        .clipShape(Circle())
-                                        .padding([.top, .trailing], 8)
-                                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                                    : nil
-                                )
-                                .onDrag {
-                                    self.draggedItem = group
-                                    return NSItemProvider(object: group.name as NSString)
-                                }
-                                .onDrop(of: [.text], delegate: DropViewDelegate(item: group, items: viewModel.groups, draggedItem: $draggedItem) { from, to in
-                                    withAnimation {
-                                        var updatedGroups = viewModel.groups
-                                        guard let fromIndex = updatedGroups.firstIndex(where: { $0.name == from.name }),
-                                              let toIndex = updatedGroups.firstIndex(where: { $0.name == to.name }) else { return }
-                                        
-                                        updatedGroups.move(fromOffsets: IndexSet(integer: fromIndex),
-                                                         toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
-                                        
-                                        viewModel.groups = updatedGroups
-                                        viewModel.saveCustomOrder()
-                                    }
-                                })
                             }
                         }
                         .padding(.horizontal)
@@ -98,15 +63,6 @@ struct ProxyView: View {
                 }
                 .padding(.top)
                 .padding(.bottom, 80)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    if viewModel.isSortMode {
-                        withAnimation {
-                            viewModel.isSortMode = false
-                            viewModel.saveCustomOrder()
-                        }
-                    }
-                }
             }
             .refreshable {
                 print("开始下拉刷新")
@@ -782,28 +738,6 @@ struct ProxyProviderCard: View {
         } else {
             return .orange
         }
-    }
-}
-
-// 添加 DropViewDelegate
-struct DropViewDelegate: DropDelegate {
-    let item: ProxyGroup
-    let items: [ProxyGroup]
-    @Binding var draggedItem: ProxyGroup?
-    let reorderHandler: (ProxyGroup, ProxyGroup) -> Void
-    
-    func performDrop(info: DropInfo) -> Bool {
-        guard let draggedItem = self.draggedItem else { return false }
-        reorderHandler(draggedItem, item)
-        self.draggedItem = nil
-        return true
-    }
-    
-    func dropEntered(info: DropInfo) {
-        guard let draggedItem = self.draggedItem,
-              draggedItem.name != item.name else { return }
-        
-        reorderHandler(draggedItem, item)
     }
 }
 
