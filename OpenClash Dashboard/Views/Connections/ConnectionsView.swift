@@ -254,18 +254,18 @@ struct ConnectionsView: View {
         
         var body: some View {
             Button(action: action) {
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     Text(title)
                         .foregroundColor(.blue)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                     Text("(\(count))")
                         .foregroundColor(.blue)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                 }
-                .frame(height: 32)
-                .padding(.horizontal, 12)
+                .frame(height: 28)
+                .padding(.horizontal, 8)
                 .background(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: 6)
                         .fill(Color.blue.opacity(0.15))
                 )
                 .opacity(isSelected ? 1.0 : 0.6)
@@ -276,65 +276,64 @@ struct ConnectionsView: View {
     
     // 修改过滤标签栏
     var filterBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                // 连接状态切换器
-                Picker("连接状态", selection: $connectionFilter) {
-                    Text("正活跃 (\(activeConnectionsCount))")
-                        .tag(ConnectionFilter.active)
-                    Text("已断开 (\(closedConnectionsCount))")
-                        .tag(ConnectionFilter.closed)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 160)
-                
-                // TCP/UDP 过滤器
-                ForEach(["TCP", "UDP"], id: \.self) { protocolType in
-                    FilterTag(
-                        title: protocolType,
-                        count: protocolType == "TCP" ? tcpConnectionsCount : udpConnectionsCount,
-                        isSelected: selectedProtocols.contains(protocolType)
-                    ) {
-                        if selectedProtocols.contains(protocolType) {
-                            selectedProtocols.remove(protocolType)
-                        } else {
-                            selectedProtocols.insert(protocolType)
-                        }
+        HStack(spacing: 6) {
+            // 连接状态切换器
+            Picker("连接状态", selection: $connectionFilter) {
+                Text("正活跃 (\(activeConnectionsCount))")
+                // Text("正活跃 (99+)")
+                    .tag(ConnectionFilter.active)
+                Text("已断开 (\(closedConnectionsCount))")
+                    .tag(ConnectionFilter.closed)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 170)
+            
+            // TCP/UDP 过滤器
+            ForEach(["TCP", "UDP"], id: \.self) { protocolType in
+                FilterTag(
+                    title: protocolType,
+                    count: protocolType == "TCP" ? tcpConnectionsCount : udpConnectionsCount,
+                    isSelected: selectedProtocols.contains(protocolType)
+                ) {
+                    if selectedProtocols.contains(protocolType) {
+                        selectedProtocols.remove(protocolType)
+                    } else {
+                        selectedProtocols.insert(protocolType)
                     }
-                }
-                
-                Spacer(minLength: 0)
-                
-                // 排序按钮
-                Menu {
-                    ForEach(SortOption.allCases, id: \.self) { option in
-                        Button {
-                            if selectedSortOption == option {
-                                isAscending.toggle()
-                            } else {
-                                selectedSortOption = option
-                                isAscending = false
-                            }
-                        } label: {
-                            HStack {
-                                Label(option.rawValue, systemImage: option.icon)
-                                if selectedSortOption == option {
-                                    Image(systemName: isAscending ? "chevron.up" : "chevron.down")
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    Image(systemName: "arrow.up.arrow.down.circle.fill")
-                        .foregroundColor(.accentColor)
-                        .font(.system(size: 22))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            
+            Spacer(minLength: 0)
+            
+            // 排序按钮
+            Menu {
+                ForEach(SortOption.allCases, id: \.self) { option in
+                    Button {
+                        if selectedSortOption == option {
+                            isAscending.toggle()
+                        } else {
+                            selectedSortOption = option
+                            isAscending = false
+                        }
+                    } label: {
+                        HStack {
+                            Label(option.rawValue, systemImage: option.icon)
+                            if selectedSortOption == option {
+                                Image(systemName: isAscending ? "chevron.up" : "chevron.down")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "arrow.up.arrow.down.circle.fill")
+                    .foregroundColor(.accentColor)
+                    .font(.system(size: 20))
+                    .frame(width: 28, height: 28)
+            }
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Color(.systemBackground))
     }
     
     private func EmptyStateView() -> some View {
@@ -394,7 +393,7 @@ struct ConnectionsView: View {
                 
                 // 搜索栏 - 有条件地显示
                 if showSearch {
-                    SearchBar(text: $searchText, placeholder: "搜索 IP、端口、主机名或设备标签")
+                    SearchBar(text: $searchText, placeholder: "搜索 IP、端口、主机名���设备标签")
                         .padding(.horizontal)
                         .padding(.vertical, 8)
                         .transition(.move(edge: .top).combined(with: .opacity))
