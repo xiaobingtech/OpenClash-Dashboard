@@ -289,67 +289,10 @@ struct ProxyGroupCard: View {
                 }
             }
             
-            // 节点状态网格
-            if !isExpanded {
-                LazyVGrid(columns: columns, spacing: 4) {
-                    ForEach(Array(nodes.enumerated()), id: \.element.id) { _, node in
-                        let status = getProxyStatus(delay: node.delay)
-                        Button {
-                            withAnimation {
-                                isExpanded = false
-                            }
-                            Task {
-                                await viewModel.selectProxy(groupName: name, proxyName: node.name)
-                                // 确保动画继续运行
-                                withAnimation {
-                                    isGlowing = true
-                                }
-                            }
-                        } label: {
-                            ZStack {
-                                if selectedNode == node.name {
-                                    // 外圈发光效果
-                                    Circle()
-                                        .fill(status.color.opacity(0.2))
-                                        .frame(width: dotSize + 8, height: dotSize + 8)
-                                        .shadow(color: status.color.opacity(0.5), radius: isGlowing ? 6 : 2, x: 0, y: 0)
-                                    
-                                    // 内圈边框
-                                    Circle()
-                                        .stroke(status.color, lineWidth: 2)
-                                        .frame(width: dotSize, height: dotSize)
-                                    
-                                    // 内部填充
-                                    Circle()
-                                        .fill(status.color)
-                                        .frame(width: dotSize - 4, height: dotSize - 4)
-                                        .scaleEffect(isGlowing ? 0.8 : 1)
-                                } else {
-                                    Circle()
-                                        .fill(status.color)
-                                        .frame(width: dotSize, height: dotSize)
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                // 将动画移到这里确保它持续运行
-                .onChange(of: selectedNode) { newValue in
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        isGlowing = true
-                    }
-                    // 延迟后重置状态
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        isGlowing = false
-                    }
-                }
-            }
-            
             // 展开后的详细列表
             if isExpanded {
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                         ForEach(nodes) { node in
                             Button {
                                 Task {
@@ -439,7 +382,7 @@ struct ProxyGroupCard: View {
                                         }
                                     }
                                 }
-                                .padding(.horizontal, 10)
+                                .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
                                 .background(
                                     RoundedRectangle(cornerRadius: 6)
@@ -447,14 +390,81 @@ struct ProxyGroupCard: View {
                                 )
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 6)
-                                        .stroke(Color.secondary.opacity(0.1), lineWidth: 1)
+                                        .stroke(selectedNode == node.name ? 
+                                               Color.blue.opacity(0.8) : 
+                                               Color.secondary.opacity(0.1),
+                                               lineWidth: selectedNode == node.name ? 2 : 1)
+                                )
+                                .shadow(
+                                    color: selectedNode == node.name ? 
+                                          Color.blue.opacity(0.3) : 
+                                          Color.clear,
+                                    radius: 4,
+                                    x: 0,
+                                    y: 0
                                 )
                             }
                             .buttonStyle(.plain)
+                            .scaleEffect(selectedNode == node.name ? 1.02 : 1.0)
+                            .animation(.spring(response: 0.3), value: selectedNode == node.name)
                         }
                     }
+                    .padding(.horizontal, 4)
+                    .padding(.top, 8)
                 }
-                .frame(maxHeight: 350)
+                .frame(maxHeight: 500)
+            } else {
+                // 节点状态网格
+                LazyVGrid(columns: columns, spacing: 4) {
+                    ForEach(Array(nodes.enumerated()), id: \.element.id) { _, node in
+                        let status = getProxyStatus(delay: node.delay)
+                        Button {
+                            withAnimation {
+                                isExpanded = false
+                            }
+                            Task {
+                                await viewModel.selectProxy(groupName: name, proxyName: node.name)
+                                withAnimation {
+                                    isGlowing = true
+                                }
+                            }
+                        } label: {
+                            ZStack {
+                                if selectedNode == node.name {
+                                    // 外圈发光效果
+                                    Circle()
+                                        .fill(status.color.opacity(0.2))
+                                        .frame(width: dotSize + 8, height: dotSize + 8)
+                                        .shadow(color: status.color.opacity(0.5), radius: isGlowing ? 6 : 2, x: 0, y: 0)
+                                    
+                                    // 内圈边框
+                                    Circle()
+                                        .stroke(status.color, lineWidth: 2)
+                                        .frame(width: dotSize, height: dotSize)
+                                    
+                                    // 内部填充
+                                    Circle()
+                                        .fill(status.color)
+                                        .frame(width: dotSize - 4, height: dotSize - 4)
+                                        .scaleEffect(isGlowing ? 0.8 : 1)
+                                } else {
+                                    Circle()
+                                        .fill(status.color)
+                                        .frame(width: dotSize, height: dotSize)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .onChange(of: selectedNode) { newValue in
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        isGlowing = true
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        isGlowing = false
+                    }
+                }
             }
         }
         .padding()
